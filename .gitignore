@@ -1,0 +1,10 @@
+node_modules/
+dist/
+src-tauri/target/
+# release workflow 收集独立 exe 的临时目录
+portable/
+# tauri-build 每次构建都会重新生成
+src-tauri/gen/schemas/
+*.log
+.DS_Store
+.reference/

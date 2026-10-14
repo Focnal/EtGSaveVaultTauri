@@ -1,0 +1,37 @@
+[package]
+name = "etg-save-vault"
+version = "0.1.1"
+description = "Enter the Gungeon 存档备份管理工具"
+authors = ["focnal"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# 逻辑放在 lib 里，main.rs 只负责调用，便于以后加集成测试
+[lib]
+name = "etg_save_vault_lib"
+crate-type = ["rlib"]
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 扫描工作区时按备份目录并行统计，缩短启动路径上最重的一步
+rayon = "1"
+time = { version = "0.3", features = ["formatting", "local-offset"] }
+sysinfo = { version = "0.37", default-features = false, features = ["system"] }
+
+# 体积 / 启动优化：单 codegen 单元 + LTO + 去符号 + 收紧 panic
+# 注意：panic=abort 与测试框架不兼容，需要跑 `cargo test` 时请临时改回 unwind
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+incremental = false

@@ -29,17 +29,43 @@ jobs:
       # 版本号单一来源是 package.json，这里挡住 Cargo.toml / tauri.conf.json 漂移
       - run: npm run version:check
 
+      # 顺便校验 tag 与 package.json 一致，避免产物名和 release 标签对不上
+      - name: Check tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          if ($version -ne $tag) {
+            Write-Host "::error::tag $tag 与 package.json version $version 不一致"
+            exit 1
+          }
+          Write-Host "版本校验通过：$version"
+
       - run: npm run build
+
+      # 把 exe 重命名成带版本号的产物，并把版本号暴露给后续步骤
+      - name: Package versioned executable
+        id: package
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $asset = "etg-save-vault-$version.exe"
+          New-Item -ItemType Directory -Force -Path portable | Out-Null
+          Copy-Item src-tauri/target/release/etg-save-vault.exe (Join-Path portable $asset)
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "asset=portable/$asset" >> $env:GITHUB_OUTPUT
+          Write-Host "已生成产物 portable/$asset"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: etg-save-vault-artifact
-          path: src-tauri/target/release/etg-save-vault.exe
+          name: etg-save-vault-${{ steps.package.outputs.version }}
+          path: ${{ steps.package.outputs.asset }}
           if-no-files-found: error
 
       - name: Publish Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: src-tauri/target/release/etg-save-vault.exe
+          files: ${{ steps.package.outputs.asset }}
           generate_release_notes: true

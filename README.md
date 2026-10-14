@@ -30,6 +30,9 @@ npm run build          # 发布构建：vite build + cargo build --release，只
 
 - `src-tauri/target/release/etg-save-vault.exe`（独立 exe，无需安装）
 
+推 tag 触发的 release workflow 会把它复制成 `portable/etg-save-vault-<package.json 版本>.exe`
+再上传，例如 `etg-save-vault-0.1.1.exe`；tag 与 `package.json` 的 version 不一致会直接失败。
+
 Rust 侧检查：
 
 ```bash

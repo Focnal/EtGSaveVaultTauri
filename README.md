@@ -1,7 +1,36 @@
 # EtG Save Vault
 
-Enter the Gungeon 存档备份管理工具。这是 [electron 版](https://github.com/Focnal/EtGSaveVault) 的 **Tauri 2 重构版**：
-后端从 Node.js 主进程换成 Rust，前端仍是 TypeScript + Vue 3，界面与交互保持一致。
+一个简单的Enter the Gungeon 存档备份管理工具。这是 [electron 版](https://github.com/Focnal/EtGSaveVault) 的 **Tauri 2 重构版**：
+后端从 Node.js 主进程换成 Rust，前端仍是 TypeScript + Vue 3，界面与交互保持一致
+
+**混用不同玩家的存档的行为尚未测试**
+
+项目由DeepSeek v4.1 flash + DeepSeek Harness完成
+
+## 原理
+
+EtG的游戏存档状态由`%USERPROFILE%\AppData\LocalLow\Dodge Roll\Enter the Gungeon`中的文件保存，形如
+
+```regex
+(Active|Slot)[ABCD]\.(game|save|options)
+```
+
+文件名（不包括后缀）的最后一个字母指的是存档槽位，以存档槽A为例：
+
+- `SlotA.save`: 存档A的游戏数据存档文件，比如帝国币数量、武器解锁情况等
+- `ActiveA.game`: 存档A中已保存退出的游戏对局
+- `SlotA.options`: 存档A的设置，比如按键绑定等
+
+当玩家在对局中进入进入下一关或保存退出时，EtG回将游戏状态写入上述的文件中，并向注册表
+`HKEY_CURRENT_USER\Software\Dodge Roll\Enter the Gungeon`
+写入相关信息
+
+使用本工具在进入下一关或保存退出后将存档文件和当前注册表信息保存下来，就可以记录某个时间点的游戏存档状态
+
+通过本工具将保存的存档文件和注册表数据进行替换就可以实现回档的效果
+
+通过本工具存储的存档也可以进行手动替换，详见 [数据布局章节](#数据布局)
+
 
 ## 功能
 
@@ -14,24 +43,24 @@ Enter the Gungeon 存档备份管理工具。这是 [electron 版](https://githu
 
 ## 环境要求
 
-- Windows 10 1803+ / Windows 11（自带 WebView2 Runtime）
-- 开发需要：Node.js >= 20、Rust stable（MSVC 工具链）、Visual Studio C++ 生成工具
+### 运行环境
+
+此工具依赖WebView2 Runtime运行，需要Windows 10 1803+ 或 Windows 11（自带 WebView2 Runtime）
+
+### 开发环境
+
+- Node.js >= 20
+- Rust（MSVC 工具链）
+- Visual Studio C++ 生成工具
 
 ## 开发与构建
 
 ```bash
-npm install            # 前端依赖（不再下载 Electron 二进制）
+npm install            # 前端依赖
 npm run dev            # vite 开发服务器 + tauri dev（Rust 侧改动会自动重编译重启）
 npm run typecheck      # vue-tsc 类型检查
 npm run build          # 发布构建：vite build + cargo build --release，只出便携版 exe
 ```
-
-产物只有一个：
-
-- `src-tauri/target/release/etg-save-vault.exe`（独立 exe，无需安装）
-
-推 tag 触发的 release workflow 会把它复制成 `portable/etg-save-vault-<package.json 版本>.exe`
-再上传，例如 `etg-save-vault-0.1.1.exe`；tag 与 `package.json` 的 version 不一致会直接失败。
 
 Rust 侧检查：
 
@@ -59,11 +88,6 @@ src/
   store.ts           全局状态、Toast、右键菜单、业务流程
   components/        Sidebar / WorkspaceView / BackupDetail / 各弹窗 / 右键菜单
   style.css          与原项目一致的样式
-scripts/
-  fixture.mjs        生成冒烟测试用的工作区与配置
-  cdp.mjs            CDP 连接、求值、截图的共用部分
-  ui-smoke.mjs       只读冒烟：逐界面断言渲染
-  e2e.mjs            完整业务链路，逐步核对磁盘结果
 docs/                界面截图
 ```
 
@@ -82,3 +106,8 @@ docs/                界面截图
 与存档来源同卷时零拷贝捕获（目录 rename），跨卷时退化为复制，默认只保留最近 1 份。
 
 应用配置与 Electron 版共用同一个文件：`%APPDATA%\EtG Save Vault\vault-config.json`
+
+## 已知问题
+
+目前从研枪部门进入第五层时`Active*.game`文件未发生任何变动，故无法在研枪部门通关后进入第五层时创建一个保存点，
+推测为研枪部门关卡并未制作完成，没有在进入第五层时添加保存动作来修改存档文件

@@ -10,12 +10,11 @@
 ## 原理
 
 EtG的游戏存档状态由`%USERPROFILE%\AppData\LocalLow\Dodge Roll\Enter the Gungeon`中的文件保存，形如
+`ActiveA.game`、
+`SlotB.save`、
+`SlotC.options`
 
-```regex
-(Active|Slot)[ABCD]\.(game|save|options)
-```
-
-文件名（不包括后缀）的最后一个字母指的是存档槽位，以存档槽A为例：
+文件名（不包括后缀名）的最后一个字母指的是存档槽位，下面以存档槽A为例：
 
 - `SlotA.save`: 存档A的游戏数据存档文件，比如帝国币数量、武器解锁情况等
 - `ActiveA.game`: 存档A中已保存退出的游戏对局

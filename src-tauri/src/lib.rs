@@ -7,11 +7,13 @@ mod fsutil;
 mod rollback;
 mod sys;
 
+use std::fs;
 use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
 use backups::{BackupDetail, CreateResult, RestoreResult, WorkspaceScan};
 use config::{AppConfig, GamePatch, GameSettings, Workspace, MAX_ROLLBACK_KEEP};
@@ -347,6 +349,52 @@ async fn pick_directory(app: AppHandle, title: Option<String>) -> Option<String>
         .map(|p| p.to_string_lossy().into_owned())
 }
 
+/// 「在资源管理器中打开」允许的范围：工作区、存档来源目录、回档点目录（含它们的子目录）。
+fn open_roots(cfg: &AppConfig) -> Vec<String> {
+    let mut roots: Vec<String> = cfg.workspaces.iter().map(|w| w.path.clone()).collect();
+    roots.push(cfg.game.source_path.clone());
+    roots.push(
+        rollback::store_path(&cfg.game)
+            .to_string_lossy()
+            .into_owned(),
+    );
+    roots
+}
+
+/// 在资源管理器中打开路径。
+///
+/// 前端不直接调用 opener 插件：插件命令受 ACL scope 约束，而工作区是用户随时添加的，
+/// 没法在 capabilities 里预先声明；改在这里校验范围后再调用插件 API，权限边界才可控。
+#[tauri::command]
+fn open_in_explorer(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<(), AppError> {
+    let cfg = state.get();
+    if !open_roots(&cfg)
+        .iter()
+        .any(|root| fsutil::is_within(root, &path))
+    {
+        return Err(AppError::from("只能打开工作区、存档来源目录或回档点目录"));
+    }
+
+    let target = fsutil::absolutize(&path);
+    if !fsutil::path_exists(&target) {
+        // 回档点目录要等第一次恢复才生成，提前建出来让「打开目录」随时可用
+        let store = rollback::store_path(&cfg.game);
+        if fsutil::is_within(&store.to_string_lossy(), &path) {
+            fs::create_dir_all(&store)?;
+        } else {
+            return Err(AppError(format!("目录不存在：{path}")));
+        }
+    }
+
+    app.opener()
+        .open_path(target.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|e| AppError(format!("无法打开：{e}")))
+}
+
 fn progress_fn(app: &AppHandle, workspace_id: &str) -> Box<ProgressFn> {
     let app = app.clone();
     let workspace_id = workspace_id.to_string();
@@ -392,6 +440,7 @@ pub fn run() {
             game_status,
             kill_game,
             pick_directory,
+            open_in_explorer,
         ])
         .run(tauri::generate_context!())
         .expect("启动 EtG Save Vault 失败");

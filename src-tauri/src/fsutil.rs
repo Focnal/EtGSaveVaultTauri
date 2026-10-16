@@ -1,6 +1,6 @@
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// 访问出错时视为不存在。
 pub fn path_exists(path: &Path) -> bool {
@@ -106,11 +106,45 @@ pub fn absolutize(path: &str) -> PathBuf {
         .unwrap_or_else(|_| raw.to_path_buf())
 }
 
-/// 小写归一化后的路径字符串，用于比较与哈希。
+/// path 是否位于 root 之内（含 root 自身）。
 ///
-/// Windows 上 `/` 与 `\` 等价，统一成 `\`，否则同一目录会因为写法不同被当成两个工作区。
-pub fn normalized_lower(path: &str) -> String {
-    let mut text = absolutize(path).to_string_lossy().into_owned();
+/// 先做词法归一化（消掉 `.` 与 `..`），再按目录边界比较：
+/// 既不让 `C:\backup` 命中 `C:\backup-old`，也不让 `C:\backup\..\Windows` 蒙混过关。
+pub fn is_within(root: &str, path: &str) -> bool {
+    if root.trim().is_empty() || path.trim().is_empty() {
+        return false;
+    }
+    let root = comparable(&collapse(root));
+    if root.is_empty() {
+        return false;
+    }
+    let path = comparable(&collapse(path));
+    path == root
+        || path
+            .strip_prefix(&root)
+            .is_some_and(|rest| rest.starts_with('\\') || rest.starts_with('/'))
+}
+
+/// 词法归一化：绝对化后消掉 `.` 与 `..`，不解析符号链接。
+///
+/// 到根/前缀时 `PathBuf::pop` 返回 false，所以 `C:\..` 仍是 `C:\`。
+fn collapse(path: &str) -> PathBuf {
+    let mut out = PathBuf::new();
+    for comp in absolutize(path).components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// 路径比较用的字符串形式：统一分隔符、去掉末尾分隔符、转小写。
+fn comparable(path: &Path) -> String {
+    let mut text = path.to_string_lossy().into_owned();
     if cfg!(windows) {
         text = text.replace('/', "\\");
     }
@@ -118,4 +152,57 @@ pub fn normalized_lower(path: &str) -> String {
         text.pop();
     }
     text.to_lowercase()
+}
+
+/// 小写归一化后的路径字符串，用于比较与哈希。
+///
+/// Windows 上 `/` 与 `\` 等价，统一成 `\`，否则同一目录会因为写法不同被当成两个工作区。
+pub fn normalized_lower(path: &str) -> String {
+    comparable(&absolutize(path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_within_respects_directory_boundary() {
+        let (root, inside, sibling) = if cfg!(windows) {
+            (r"C:\vault", r"C:\vault\20260101_120000", r"C:\vault-old")
+        } else {
+            ("/vault", "/vault/20260101_120000", "/vault-old")
+        };
+
+        assert!(is_within(root, root));
+        assert!(is_within(root, inside));
+        assert!(!is_within(root, sibling));
+        // 空路径不能当成「处处允许」
+        assert!(!is_within("", inside));
+        assert!(!is_within(root, ""));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn is_within_ignores_case_and_separator_style() {
+        assert!(is_within(r"C:\Vault\", r"c:/vault/backup"));
+        assert!(!is_within(r"C:\Vault", r"C:\Vault2"));
+    }
+
+    #[test]
+    fn is_within_collapses_dots_and_blocks_traversal() {
+        let (root, inside, outside) = if cfg!(windows) {
+            (
+                r"C:\vault",
+                r"C:\vault\sub\..\inner",
+                r"C:\vault\..\Windows",
+            )
+        } else {
+            ("/vault", "/vault/sub/../inner", "/vault/../etc")
+        };
+
+        // `..` 在范围内绕一圈仍然算范围内
+        assert!(is_within(root, inside));
+        // 但绝不能借 `..` 走出去
+        assert!(!is_within(root, outside));
+    }
 }

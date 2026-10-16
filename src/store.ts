@@ -1,4 +1,3 @@
-import { openPath } from '@tauri-apps/plugin-opener'
 import { reactive, type Component } from 'vue'
 import { api, errMsg } from './api'
 import type {
@@ -78,12 +77,12 @@ export const state = reactive({
 let toastId = 0
 let unlistenProgress: (() => void) | null = null
 
-/** 在资源管理器中打开路径；失败按提示抛出 */
+/** 在资源管理器中打开路径；后端只放行工作区、存档来源与回档点目录 */
 export async function openInExplorer(path: string): Promise<void> {
   try {
-    await openPath(path)
+    await api.openInExplorer(path)
   } catch (e) {
-    toast('err', `无法打开：${errMsg(e)}`)
+    toast('err', errMsg(e))
   }
 }
 

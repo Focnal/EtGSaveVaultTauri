@@ -42,6 +42,8 @@ export const api = {
   gameStatus: () => invoke<GameStatus>('game_status'),
   killGame: () => invoke<{ killed: boolean }>('kill_game'),
   pickDirectory: (title?: string) => invoke<string | null>('pick_directory', { title }),
+  /** 在资源管理器中打开路径；允许范围由后端校验 */
+  openInExplorer: (path: string) => invoke<void>('open_in_explorer', { path }),
   /** 返回取消订阅函数 */
   onProgress: (cb: (p: BackupProgress) => void) =>
     listen<BackupProgress>('vault:progress', (event) => cb(event.payload))

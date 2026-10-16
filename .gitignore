@@ -6,5 +6,7 @@ portable/
 # tauri-build 每次构建都会重新生成
 src-tauri/gen/schemas/
 *.log
+
 .DS_Store
-.reference/
+.idea/
+.vscode/

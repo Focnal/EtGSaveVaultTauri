@@ -89,7 +89,7 @@ function selectName(e: FocusEvent): void {
       </div>
       <div v-if="state.gameRunning" class="warn-text compact source-check-warn">
         <Gamepad2 :size="12" />
-        游戏正在运行：存档可能正在写入，建议保存退出后再创建备份。
+        游戏正在运行：请检查新建的备份中是否含有Active*.game文件。
       </div>
     </div>
 

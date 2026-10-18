@@ -30,7 +30,16 @@ const d = computed(() => state.detail)
 const wsName = computed(
   () => state.config?.workspaces.find((w) => w.id === state.detail?.workspaceId)?.name ?? ''
 )
-const shownEntries = computed(() => (state.detail?.entries ?? []).slice(0, ENTRY_SHOW))
+const entryLimit = ref(ENTRY_SHOW)
+const shownEntries = computed(() => (state.detail?.entries ?? []).slice(0, entryLimit.value))
+const hiddenEntries = computed(() =>
+  Math.max(0, (state.detail?.entries.length ?? 0) - shownEntries.value.length)
+)
+const dataPath = computed(() => {
+  const game = state.config?.game
+  if (!d.value || !game) return ''
+  return `${d.value.path}\\${game.dataDirName}`
+})
 
 interface NoteTarget {
   workspaceId: string
@@ -74,6 +83,7 @@ function applyCurrentDetail(): void {
   noteTarget = { workspaceId: dd.workspaceId, name: dd.name }
   persistedNote = dd.note
   note.value = dd.note
+  entryLimit.value = ENTRY_SHOW
   noteSaving.value = false
 }
 
@@ -149,6 +159,7 @@ function onRename(): void {
           <Archive v-else :size="17" class="accent-icon" />
           <h2 class="view-title">{{ d.name }}</h2>
           <span v-if="d.isSnapshot" class="badge">自动快照</span>
+          <span v-for="s in d.slots" :key="s" class="slot-badge">槽位 {{ s }}</span>
           <span v-if="!d.hasData" class="badge badge-warn">数据缺失</span>
           <span v-if="!d.hasRegistry" class="badge badge-warn">注册表缺失</span>
         </div>
@@ -229,11 +240,20 @@ function onRename(): void {
       </button>
     </div>
 
-    <div class="section-title">
-      存档内容
-      <span v-if="d.entries.length > ENTRY_SHOW" class="dim">
-        （仅显示前 {{ ENTRY_SHOW }} 项，共 {{ d.entries.length }} 项）
-      </span>
+    <div class="section-head">
+      <div class="section-title">
+        存档内容
+        <span v-if="d.entries.length > 0" class="dim">（共 {{ d.entries.length }} 项）</span>
+      </div>
+      <button
+        v-if="d.hasData"
+        class="btn btn-sm"
+        title="在资源管理器中打开数据目录"
+        @click="openInExplorer(dataPath)"
+      >
+        <FolderOpen :size="13" />
+        打开数据目录
+      </button>
     </div>
     <div v-if="!d.hasData" class="hint warn-text">缺少存档数据目录，不显示内容。</div>
     <div v-else-if="shownEntries.length === 0" class="hint">数据目录为空。</div>
@@ -241,10 +261,17 @@ function onRename(): void {
       <div v-for="e in shownEntries" :key="e.name" class="file-row">
         <Folder v-if="e.isDir" :size="13" class="ws-icon" />
         <File v-else :size="13" class="dim-icon" />
-        <span class="file-name">{{ e.name }}</span>
+        <span class="file-name" :title="e.name">{{ e.name }}</span>
         <span class="file-size">{{ e.isDir ? '—' : formatSize(e.size) }}</span>
         <span class="file-time">{{ formatTime(e.mtime) }}</span>
       </div>
     </div>
+    <button
+      v-if="hiddenEntries > 0"
+      class="btn load-more"
+      @click="entryLimit += ENTRY_SHOW"
+    >
+      显示更多（还有 {{ hiddenEntries }} 项）
+    </button>
   </div>
 </template>

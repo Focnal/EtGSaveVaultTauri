@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { AlertTriangle, Gamepad2, HardDrive } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
-import { formatSize, formatTime, timestampName } from '../format'
+import { formatSize, formatTime, timestampName, validateBackupName } from '../format'
 import { createBackup, refreshGameStatus, refreshSourceStatus, state } from '../store'
 import ModalShell from './ModalShell.vue'
 import ProgressInline from './ProgressInline.vue'
@@ -12,10 +12,16 @@ const note = ref('')
 const busy = ref(false)
 const overwritePrompt = ref(false)
 
+const nameError = computed(() => (name.value ? validateBackupName(name.value) : null))
 const status = computed(() => state.sourceStatus)
 const sourceReady = computed(() => !!status.value?.exists && (status.value?.fileCount ?? 0) > 0)
 const canSubmit = computed(
-  () => !!name.value.trim() && !busy.value && !state.sourceStatusLoading && sourceReady.value
+  () =>
+    !!name.value.trim() &&
+    !nameError.value &&
+    !busy.value &&
+    !state.sourceStatusLoading &&
+    sourceReady.value
 )
 const duplicate = computed(() =>
   (state.scans[workspaceId.value]?.backups ?? []).some((b) => b.name === name.value.trim())
@@ -56,6 +62,10 @@ function cancel(): void {
   if (busy.value) return
   state.modal = { kind: 'none' }
 }
+
+function selectName(e: FocusEvent): void {
+  ;(e.target as HTMLInputElement).select()
+}
 </script>
 
 <template>
@@ -85,7 +95,15 @@ function cancel(): void {
 
     <label class="field">
       <span>备份名称</span>
-      <input v-model="name" type="text" data-autofocus spellcheck="false" @keyup.enter="submit" />
+      <input
+        v-model="name"
+        type="text"
+        data-autofocus
+        spellcheck="false"
+        @focus="selectName"
+        @keyup.enter="submit"
+      />
+      <span v-if="nameError" class="field-error">{{ nameError }}</span>
     </label>
     <label class="field">
       <span>备注（可选）</span>

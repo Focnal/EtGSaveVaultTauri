@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -29,6 +30,8 @@ pub struct BackupSummary {
     pub has_data: bool,
     pub is_snapshot: bool,
     pub note: String,
+    /// 从 SlotA.save / ActiveA.game 等文件名识别出的存档槽位
+    pub slots: Vec<String>,
     /// 数据目录与注册表齐全，否则视为损坏
     pub valid: bool,
 }
@@ -106,6 +109,37 @@ pub fn validate_backup_name(name: &str) -> Result<(), AppError> {
     if name == "." || name == ".." {
         return Err(AppError::from("非法的备份名称"));
     }
+    if name.ends_with('.') {
+        return Err(AppError::from("名称不能以句点结尾"));
+    }
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    if matches!(
+        stem.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    ) {
+        return Err(AppError::from("该名称是 Windows 保留名称，无法用作目录名"));
+    }
     if name.chars().count() > 100 {
         return Err(AppError::from("备份名称过长"));
     }
@@ -128,6 +162,26 @@ fn read_meta(dir: &Path) -> BackupMeta {
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or_default()
+}
+
+/// 从存档文件名推断槽位（A/B/C…）：SlotA.save、ActiveA.game、SlotA.options。
+fn detect_slots(data_dir: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(data_dir) else {
+        return Vec::new();
+    };
+    let mut slots = BTreeSet::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        for prefix in ["Slot", "Active"] {
+            let Some(rest) = name.strip_prefix(prefix) else { continue };
+            let mut chars = rest.chars();
+            let Some(slot) = chars.next() else { continue };
+            if slot.is_ascii_alphabetic() && chars.next() == Some('.') {
+                slots.insert(slot.to_ascii_uppercase().to_string());
+            }
+        }
+    }
+    slots.into_iter().collect()
 }
 
 fn write_meta(dir: &Path, created_at: f64, note: &str) -> Result<(), AppError> {
@@ -182,9 +236,15 @@ pub fn list_backups(ws: &Workspace, game: &GameSettings) -> Result<WorkspaceScan
             } else {
                 (0, 0)
             };
+            let slots = if has_data {
+                detect_slots(&data_dir)
+            } else {
+                Vec::new()
+            };
             BackupSummary {
                 is_snapshot: name.starts_with(SNAPSHOT_PREFIX),
                 valid: has_data && has_registry,
+                slots,
                 name,
                 path: base.to_string_lossy().into_owned(),
                 workspace_id: ws.id.clone(),
@@ -454,6 +514,9 @@ mod tests {
         assert!(validate_backup_name("  pad  ").is_err());
         assert!(validate_backup_name("a/b").is_err());
         assert!(validate_backup_name("..").is_err());
+        assert!(validate_backup_name("CON").is_err());
+        assert!(validate_backup_name("nul.backup").is_err());
+        assert!(validate_backup_name("trailing.").is_err());
         assert!(validate_backup_name(&"x".repeat(101)).is_err());
     }
 

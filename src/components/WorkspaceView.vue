@@ -2,6 +2,7 @@
 import {
   Archive,
   Camera,
+  Copy,
   ExternalLink,
   FolderOpen,
   HardDrive,
@@ -10,23 +11,38 @@ import {
   RefreshCw
 } from 'lucide-vue-next'
 import { computed } from 'vue'
-import { formatSize, formatTime } from '../format'
+import { formatCompactTime, formatSize, formatTime } from '../format'
 import { openBackupMenu } from '../menus'
-import { openInExplorer, openNewBackup, scanWorkspace, selectBackup, state } from '../store'
+import {
+  copyText,
+  openInExplorer,
+  openNewBackup,
+  scanWorkspace,
+  selectBackup,
+  state,
+  visibleBackups
+} from '../store'
+import type { BackupSort } from '../store'
 
 const ws = computed(
   () => state.config?.workspaces.find((w) => w.id === state.selectedWorkspaceId) ?? null
 )
 const scan = computed(() => (ws.value ? state.scans[ws.value.id] : undefined))
 const backups = computed(() => scan.value?.backups ?? [])
+const filtered = computed(() => visibleBackups(backups.value))
+const filtering = computed(() => state.filter.trim().length > 0)
 const scanning = computed(() => (ws.value ? !!state.scanning[ws.value.id] : false))
 const totalSize = computed(() => backups.value.reduce((s, b) => s + b.totalSize, 0))
-const snapshotCount = computed(() => backups.value.filter((b) => b.isSnapshot).length)
+const validCount = computed(() => backups.value.filter((b) => b.valid).length)
 const latest = computed(() =>
   backups.value.length ? Math.max(...backups.value.map((b) => b.createdAt)) : null
 )
 const game = computed(() => state.config?.game ?? null)
 const source = computed(() => state.sourceStatus)
+
+function onSortChange(e: Event): void {
+  state.backupSort = (e.target as HTMLSelectElement).value as BackupSort
+}
 </script>
 
 <template>
@@ -58,15 +74,15 @@ const source = computed(() => state.sourceStatus)
         <div class="stat-label">备份</div>
       </div>
       <div class="stat">
-        <div class="stat-value">{{ snapshotCount }}</div>
-        <div class="stat-label">自动快照</div>
+        <div class="stat-value">{{ validCount }}</div>
+        <div class="stat-label">可完整恢复</div>
       </div>
       <div class="stat">
         <div class="stat-value">{{ formatSize(totalSize) }}</div>
-        <div class="stat-label">总占用</div>
+        <div class="stat-label">数据占用</div>
       </div>
       <div class="stat">
-        <div class="stat-value">{{ latest ? formatTime(latest).slice(5) : '—' }}</div>
+        <div class="stat-value">{{ latest ? formatCompactTime(latest) : '—' }}</div>
         <div class="stat-label">最近备份</div>
       </div>
     </div>
@@ -82,21 +98,50 @@ const source = computed(() => state.sourceStatus)
         {{ source.fileCount }} 个文件 · {{ formatSize(source.totalSize) }}
         <template v-if="source.modifiedAt"> · 最后写入 {{ formatTime(source.modifiedAt) }}</template>
       </span>
+      <button class="icon-btn xs" title="复制来源路径" @click="copyText(game.sourcePath, '来源路径')">
+        <Copy :size="12" />
+      </button>
       <button class="icon-btn xs" title="打开来源目录" @click="openInExplorer(game.sourcePath)">
         <ExternalLink :size="12" />
       </button>
     </div>
 
-    <div class="section-title">备份列表</div>
+    <div class="list-toolbar">
+      <div class="section-title">
+        备份列表
+        <span v-if="filtering" class="dim">
+          · 匹配 {{ filtered.length }}/{{ backups.length }} 项
+        </span>
+      </div>
+      <label class="sort-control">
+        <span class="dim">排序</span>
+        <select :value="state.backupSort" @change="onSortChange">
+          <option value="newest">最新优先</option>
+          <option value="oldest">最早优先</option>
+          <option value="name">名称</option>
+          <option value="size">占用大小</option>
+        </select>
+      </label>
+    </div>
+
     <div v-if="scan?.missing" class="hint warn-text">目录不存在：{{ ws.path }}</div>
     <div v-else-if="scanning && !scan" class="hint">
       <LoaderCircle :size="13" class="spin inline-icon" />
       正在扫描备份…
     </div>
+    <div v-else-if="filtering && filtered.length === 0" class="hint">
+      没有匹配「{{ state.filter.trim() }}」的备份。
+    </div>
     <div v-else-if="backups.length === 0" class="hint">还没有备份，点击「新建备份」创建第一份。</div>
     <div v-else class="bk-table">
+      <div class="bk-table-head">
+        <span class="bk-head-name">名称 / 备注</span>
+        <span class="bk-meta">创建时间</span>
+        <span class="bk-meta">文件数</span>
+        <span class="bk-meta">占用</span>
+      </div>
       <div
-        v-for="b in backups"
+        v-for="b in filtered"
         :key="b.name"
         class="bk-table-row"
         @click="selectBackup(ws.id, b.name)"
@@ -104,7 +149,13 @@ const source = computed(() => state.sourceStatus)
       >
         <Camera v-if="b.isSnapshot" :size="14" class="dim-icon" />
         <Archive v-else :size="14" class="accent-icon" />
-        <span class="bk-name" :title="b.note || b.name">{{ b.name }}</span>
+        <div class="bk-name-block">
+          <span class="bk-name" :title="b.name">{{ b.name }}</span>
+          <span v-if="b.note" class="bk-note" :title="b.note">{{ b.note }}</span>
+        </div>
+        <span v-if="b.slots.length" class="slot-badge" :title="`存档槽位 ${b.slots.join('、')}`">
+          槽位 {{ b.slots.join(' / ') }}
+        </span>
         <span v-if="!b.hasData" class="badge badge-warn">数据缺失</span>
         <span v-if="!b.hasRegistry" class="badge badge-warn">注册表缺失</span>
         <span class="bk-meta">{{ formatTime(b.createdAt) }}</span>

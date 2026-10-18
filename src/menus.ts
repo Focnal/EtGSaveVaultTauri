@@ -1,6 +1,7 @@
-import { ExternalLink, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-vue-next'
+import { Copy, ExternalLink, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-vue-next'
 import type { BackupSummary, Workspace } from './types'
 import {
+  copyText,
   openInExplorer,
   openMenu,
   openNewBackup,
@@ -20,6 +21,7 @@ export function openWorkspaceMenu(e: MouseEvent, ws: Workspace): void {
     { label: '新建备份', icon: Plus, run: () => openNewBackup(ws.id) },
     { label: '刷新', icon: RefreshCw, run: () => scanWorkspace(ws.id) },
     { label: '在资源管理器中打开', icon: ExternalLink, run: () => openInExplorer(ws.path) },
+    { label: '复制目录路径', icon: Copy, run: () => copyText(ws.path, '目录路径') },
     { divider: true },
     {
       label: '移除工作区',
@@ -40,9 +42,11 @@ export function openBackupMenu(e: MouseEvent, workspaceId: string, b: BackupSumm
       label: b.hasRegistry ? '恢复此存档' : '仅恢复存档数据',
       icon: RotateCcw,
       disabled: !b.hasData,
+      hint: b.hasData ? undefined : '备份缺少存档数据目录，无法恢复',
       run: () => restoreBackup(workspaceId, b.name, b.hasRegistry)
     },
     { label: '在资源管理器中打开', icon: ExternalLink, run: () => openInExplorer(b.path) },
+    { label: '复制备份路径', icon: Copy, run: () => copyText(b.path, '备份路径') },
     { divider: true },
     { label: '删除', icon: Trash2, danger: true, run: () => requestDeleteBackup(workspaceId, b.name) }
   ]

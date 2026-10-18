@@ -10,7 +10,7 @@ import {
   Plus,
   Settings
 } from 'lucide-vue-next'
-import { computed, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import BackupDetail from './components/BackupDetail.vue'
 import ConfirmModal from './components/ConfirmModal.vue'
 import ContextMenu from './components/ContextMenu.vue'
@@ -20,10 +20,62 @@ import RollbackPanel from './components/RollbackPanel.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import Sidebar from './components/Sidebar.vue'
 import WorkspaceView from './components/WorkspaceView.vue'
-import { addWorkspace, init, refreshGameStatus, runToastAction, state } from './store'
+import {
+  addWorkspace,
+  init,
+  openNewBackup,
+  openRename,
+  refreshGameStatus,
+  requestDeleteBackup,
+  runToastAction,
+  scanAll,
+  state
+} from './store'
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return (
+    target.matches('input, textarea, select') ||
+    target.isContentEditable ||
+    !!target.closest('[contenteditable="true"]')
+  )
+}
+
+function onGlobalKey(e: KeyboardEvent): void {
+  if (state.modal.kind !== 'none' || state.menu || isEditableTarget(e.target)) return
+  const mod = e.ctrlKey || e.metaKey
+  const selected = state.selectedWorkspaceId && state.selectedBackupName
+
+  if (e.key === 'F5') {
+    e.preventDefault()
+    void scanAll()
+  } else if (e.key === 'F2' && selected) {
+    e.preventDefault()
+    openRename(state.selectedWorkspaceId!, state.selectedBackupName!)
+  } else if (e.key === 'Delete' && selected) {
+    e.preventDefault()
+    requestDeleteBackup(state.selectedWorkspaceId!, state.selectedBackupName!)
+  } else if (mod && e.key.toLowerCase() === 'n' && state.selectedWorkspaceId) {
+    e.preventDefault()
+    openNewBackup(state.selectedWorkspaceId)
+  } else if (mod && e.key.toLowerCase() === 'f') {
+    e.preventDefault()
+    const input = document.getElementById('backup-search') as HTMLInputElement | null
+    input?.focus()
+    input?.select()
+  } else if (mod && e.key === ',') {
+    e.preventDefault()
+    state.modal = { kind: 'settings' }
+  }
+}
 
 onMounted(() => {
   void init()
+  window.addEventListener('keydown', onGlobalKey)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onGlobalKey)
 })
 
 const rollbackCount = computed(() => state.rollbacks?.points.length ?? 0)
@@ -87,7 +139,12 @@ const gameStatusClass = computed(() => {
           <Gamepad2 v-else :size="13" />
           <span>{{ gameStatusText }}</span>
         </button>
-        <button class="icon-btn" title="设置" @click="state.modal = { kind: 'settings' }">
+        <button
+          class="icon-btn"
+          title="设置 (Ctrl+,)"
+          aria-label="设置"
+          @click="state.modal = { kind: 'settings' }"
+        >
           <Settings :size="16" />
         </button>
       </div>

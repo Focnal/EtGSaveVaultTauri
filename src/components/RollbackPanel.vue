@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { AlertTriangle, FolderOpen, History, RotateCcw, Trash2 } from 'lucide-vue-next'
-import { computed, onMounted } from 'vue'
+import {
+  AlertTriangle,
+  FolderOpen,
+  History,
+  LoaderCircle,
+  RefreshCw,
+  RotateCcw,
+  Trash2
+} from 'lucide-vue-next'
+import { computed, onMounted, ref } from 'vue'
 import { formatSize, formatTime } from '../format'
 import {
   loadRollbacks,
@@ -14,9 +22,20 @@ import ModalShell from './ModalShell.vue'
 
 const list = computed(() => state.rollbacks)
 const points = computed(() => list.value?.points ?? [])
+const refreshing = ref(false)
+
+async function refresh(): Promise<void> {
+  if (refreshing.value) return
+  refreshing.value = true
+  try {
+    await loadRollbacks()
+  } finally {
+    refreshing.value = false
+  }
+}
 
 onMounted(() => {
-  void loadRollbacks()
+  void refresh()
 })
 
 function close(): void {
@@ -54,6 +73,9 @@ function close(): void {
             <span v-if="!p.hasData" class="badge badge-warn">数据缺失</span>
             <span v-else-if="!p.hasRegistry" class="badge badge-warn">注册表缺失</span>
           </div>
+          <div v-if="p.sourceBackup" class="rp-source" :title="p.sourceBackup">
+            来自恢复「{{ p.sourceBackup }}」之前
+          </div>
           <div class="rp-note" :title="p.note">{{ p.note || p.id }}</div>
         </div>
         <div class="rp-meta">
@@ -61,6 +83,13 @@ function close(): void {
           <span>{{ p.fileCount }} 个文件</span>
         </div>
         <div class="rp-actions">
+          <button
+            class="icon-btn"
+            title="在资源管理器中打开这份回档点"
+            @click="openInExplorer(p.path)"
+          >
+            <FolderOpen :size="14" />
+          </button>
           <button
             class="btn"
             :disabled="!p.hasData"
@@ -91,6 +120,11 @@ function close(): void {
       >
         <FolderOpen :size="14" />
         打开目录
+      </button>
+      <button class="btn" :disabled="refreshing" @click="refresh">
+        <LoaderCircle v-if="refreshing" :size="14" class="spin" />
+        <RefreshCw v-else :size="14" />
+        刷新
       </button>
       <button class="btn btn-danger" :disabled="points.length === 0" @click="requestClearRollbacks">
         <Trash2 :size="14" />

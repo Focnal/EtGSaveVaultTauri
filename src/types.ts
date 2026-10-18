@@ -54,6 +54,8 @@ export interface BackupSummary {
   hasData: boolean
   isSnapshot: boolean
   note: string
+  /** 从文件名识别出的存档槽位（A/B/C…） */
+  slots: string[]
   /** 数据目录与注册表齐全，否则视为损坏 */
   valid: boolean
 }

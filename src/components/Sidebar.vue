@@ -9,10 +9,12 @@ import {
   FolderSearch,
   LoaderCircle,
   Plus,
-  RefreshCw
+  RefreshCw,
+  Search,
+  X
 } from 'lucide-vue-next'
-import { computed } from 'vue'
-import { formatTime } from '../format'
+import { computed, nextTick, watch } from 'vue'
+import { formatCompactTime } from '../format'
 import { openBackupMenu, openWorkspaceMenu } from '../menus'
 import {
   addWorkspace,
@@ -20,7 +22,8 @@ import {
   scanWorkspace,
   selectBackup,
   selectWorkspace,
-  state
+  state,
+  visibleBackups
 } from '../store'
 import type { BackupSummary, Workspace } from '../types'
 
@@ -29,16 +32,42 @@ const backupsOf = (id: string) => state.scans[id]?.backups ?? []
 const missingOf = (id: string) => state.scans[id]?.missing ?? false
 const scanningOf = (id: string) => !!state.scanning[id]
 const scanningAll = computed(() => workspaces.value.some((ws) => scanningOf(ws.id)))
+const filtering = computed(() => state.filter.trim().length > 0)
+
+const visibleByWorkspace = computed(() => {
+  const map: Record<string, BackupSummary[]> = {}
+  for (const ws of workspaces.value) map[ws.id] = visibleBackups(backupsOf(ws.id))
+  return map
+})
+const visibleOf = (id: string): BackupSummary[] => visibleByWorkspace.value[id] ?? []
+const matchTotal = computed(() =>
+  filtering.value
+    ? workspaces.value.reduce((sum, ws) => sum + visibleOf(ws.id).length, 0)
+    : null
+)
+
+function clearFilter(): void {
+  state.filter = ''
+}
+
+watch(
+  () => [state.selectedWorkspaceId, state.selectedBackupName],
+  async () => {
+    await nextTick()
+    document
+      .querySelector<HTMLElement>('.bk-row.selected')
+      ?.scrollIntoView({ block: 'nearest' })
+  }
+)
 
 function toggle(id: string): void {
   state.expanded[id] = !state.expanded[id]
   if (state.expanded[id] && !state.scans[id]) void scanWorkspace(id)
 }
 
-/** 左键点击：选中并切换展开状态，已展开的再点即折叠 */
+/** 左键点击只负责选中/展开；折叠交给 chevron，避免误收起列表 */
 function onWorkspaceClick(ws: Workspace): void {
-  selectWorkspace(ws.id, false)
-  toggle(ws.id)
+  selectWorkspace(ws.id, true)
 }
 
 /** 右键先选中，菜单项与右侧详情才对应用户点到的那一项 */
@@ -70,6 +99,27 @@ function onBackupContext(e: MouseEvent, ws: Workspace, b: BackupSummary): void {
       </div>
     </div>
 
+    <div class="sidebar-search">
+      <Search :size="13" class="search-icon" />
+      <input
+        id="backup-search"
+        v-model="state.filter"
+        type="text"
+        placeholder="搜索备份名称、备注或槽位"
+        spellcheck="false"
+        aria-label="搜索备份"
+      />
+      <button
+        v-if="filtering"
+        class="icon-btn xs"
+        title="清除搜索"
+        aria-label="清除搜索"
+        @click="clearFilter"
+      >
+        <X :size="12" />
+      </button>
+    </div>
+
     <div class="tree">
       <div v-if="workspaces.length === 0" class="tree-empty">
         <FolderSearch :size="30" :stroke-width="1.3" />
@@ -81,10 +131,17 @@ function onBackupContext(e: MouseEvent, ws: Workspace, b: BackupSummary): void {
         </button>
       </div>
 
+      <div v-else-if="filtering && matchTotal === 0" class="tree-hint filter-empty">
+        没有匹配「{{ state.filter.trim() }}」的备份
+      </div>
+
       <div v-for="ws in workspaces" :key="ws.id" class="ws-node">
         <div
           class="tree-row ws-row"
-          :class="{ selected: state.selectedWorkspaceId === ws.id && !state.selectedBackupName }"
+          :class="{
+            selected: state.selectedWorkspaceId === ws.id && !state.selectedBackupName,
+            'selected-parent': state.selectedWorkspaceId === ws.id && !!state.selectedBackupName
+          }"
           @click="onWorkspaceClick(ws)"
           @contextmenu.prevent="onWorkspaceContext($event, ws)"
         >
@@ -101,12 +158,14 @@ function onBackupContext(e: MouseEvent, ws: Workspace, b: BackupSummary): void {
           <span class="row-label" :title="ws.path">{{ ws.name }}</span>
           <AlertTriangle v-if="missingOf(ws.id)" :size="12" class="warn-icon" />
           <LoaderCircle v-else-if="scanningOf(ws.id)" :size="11" class="spin row-spinner" />
-          <span v-else class="row-count">{{ backupsOf(ws.id).length }}</span>
+          <span v-else class="row-count">
+            {{ filtering ? visibleOf(ws.id).length : backupsOf(ws.id).length }}
+          </span>
         </div>
 
-        <div v-if="state.expanded[ws.id]" class="bk-list">
+        <div v-if="state.expanded[ws.id] || filtering" class="bk-list">
           <div
-            v-for="b in backupsOf(ws.id)"
+            v-for="b in visibleOf(ws.id)"
             :key="b.name"
             class="tree-row bk-row"
             :class="{
@@ -120,11 +179,20 @@ function onBackupContext(e: MouseEvent, ws: Workspace, b: BackupSummary): void {
             <span class="row-label" :title="b.note ? `${b.name} — ${b.note}` : b.name">
               {{ b.name }}
             </span>
+            <span v-if="b.slots.length" class="slot-badge" :title="`存档槽位 ${b.slots.join('、')}`">
+              {{ b.slots.join('') }}
+            </span>
             <AlertTriangle v-if="!b.valid" :size="11" class="warn-icon" />
-            <span class="row-date">{{ formatTime(b.createdAt).slice(5) }}</span>
+            <span class="row-date">{{ formatCompactTime(b.createdAt) }}</span>
           </div>
           <div v-if="scanningOf(ws.id) && !state.scans[ws.id]" class="tree-hint">
             正在扫描…
+          </div>
+          <div
+            v-else-if="filtering && visibleOf(ws.id).length === 0"
+            class="tree-hint"
+          >
+            无匹配
           </div>
           <div
             v-else-if="!missingOf(ws.id) && backupsOf(ws.id).length === 0"

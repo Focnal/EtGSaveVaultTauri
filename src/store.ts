@@ -5,6 +5,7 @@ import type {
   AppConfig,
   BackupDetail,
   BackupProgress,
+  BackupSummary,
   GameSettings,
   RegistryOutcome,
   RollbackList,
@@ -12,6 +13,8 @@ import type {
   SourceStatus,
   WorkspaceScan
 } from './types'
+
+export type BackupSort = 'newest' | 'oldest' | 'name' | 'size'
 
 export type ModalState =
   | { kind: 'none' }
@@ -45,6 +48,8 @@ export interface MenuItem {
   icon?: Component
   danger?: boolean
   disabled?: boolean
+  /** 禁用原因或补充说明，作为 tooltip 展示 */
+  hint?: string
   run: () => void | Promise<void>
 }
 
@@ -68,6 +73,8 @@ export const state = reactive({
   sourceStatus: null as SourceStatus | null,
   sourceStatusLoading: false,
   expanded: {} as Record<string, boolean>,
+  filter: '',
+  backupSort: 'newest' as BackupSort,
   selectedWorkspaceId: null as string | null,
   selectedBackupName: null as string | null,
   detail: null as BackupDetail | null,
@@ -84,7 +91,56 @@ export const state = reactive({
 let toastId = 0
 let unlistenProgress: (() => void) | null = null
 let detailSeq = 0
+let lastScanAt = 0
 const scanSeq: Record<string, number> = {}
+
+/** 备份搜索：匹配名称、备注和槽位。 */
+export function visibleBackups(backups: BackupSummary[]): BackupSummary[] {
+  const q = state.filter.trim().toLocaleLowerCase()
+  const matched = q
+    ? backups.filter((b) =>
+        `${b.name}\n${b.note}\n${b.slots.join(' ')}`.toLocaleLowerCase().includes(q)
+      )
+    : backups.slice()
+  switch (state.backupSort) {
+    case 'oldest':
+      return matched.sort((a, b) => a.createdAt - b.createdAt)
+    case 'name':
+      return matched.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+    case 'size':
+      return matched.sort((a, b) => b.totalSize - a.totalSize)
+    default:
+      return matched.sort((a, b) => b.createdAt - a.createdAt)
+  }
+}
+
+export function matchCount(): number {
+  let total = 0
+  for (const scan of Object.values(state.scans)) total += visibleBackups(scan.backups).length
+  return total
+}
+
+/** 复制文本；优先 Clipboard API，失败后退回临时 textarea。 */
+export async function copyText(text: string, label = '路径'): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    try {
+      const area = document.createElement('textarea')
+      area.value = text
+      area.style.position = 'fixed'
+      area.style.opacity = '0'
+      document.body.appendChild(area)
+      area.select()
+      document.execCommand('copy')
+      area.remove()
+    } catch {
+      toast('err', '复制失败，请手动选择文本复制')
+      return
+    }
+  }
+  toast('ok', `${label}已复制`)
+}
 
 /** 在资源管理器中打开路径；后端只放行工作区、存档来源与回档点目录 */
 export async function openInExplorer(path: string): Promise<void> {
@@ -160,6 +216,7 @@ export async function init(): Promise<void> {
 
 export async function scanAll(): Promise<void> {
   if (!state.config) return
+  lastScanAt = Date.now()
   const ids = new Set(state.config.workspaces.map((w) => w.id))
   for (const key of Object.keys(state.scans)) {
     if (!ids.has(key)) delete state.scans[key]
@@ -582,7 +639,11 @@ export function startGameStatusWatcher(): void {
   window.setInterval(() => {
     if (!document.hidden) void refreshGameStatus()
   }, 5000)
-  window.addEventListener('focus', () => void refreshGameStatus())
+  window.addEventListener('focus', () => {
+    void refreshGameStatus()
+    // 外部可能新增/删除了备份；节流后刷新，避免频繁 Alt-Tab 触发全量统计
+    if (Date.now() - lastScanAt > 15000) void scanAll()
+  })
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) void refreshGameStatus()
   })

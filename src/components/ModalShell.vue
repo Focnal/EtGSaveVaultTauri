@@ -31,7 +31,7 @@ function focusables(): HTMLElement[] {
   const node = panel.value
   if (!node) return []
   return Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-    (el) => el.offsetParent !== null || el === document.activeElement
+    (el) => el.getClientRects().length > 0
   )
 }
 

@@ -3,6 +3,7 @@
 }
 
 :root {
+  color-scheme: dark;
   --bg-0: #101318;
   --bg-1: #161a21;
   --bg-2: #1c212a;
@@ -11,7 +12,7 @@
   --border-soft: #232a35;
   --text: #e8ebf0;
   --text-2: #aab3c0;
-  --text-3: #707b8a;
+  --text-3: #8a95a5;
   --accent: #46c98d;
   --accent-hover: #57d89d;
   --blue: #5ea8ff;
@@ -62,6 +63,22 @@ input:focus,
 textarea:focus,
 select:focus {
   border-color: var(--accent);
+}
+
+button:focus-visible,
+[role='treeitem']:focus-visible,
+[role='menuitem']:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(70, 201, 141, 0.18);
 }
 
 textarea {
@@ -1062,7 +1079,14 @@ code {
 }
 
 .toast-text {
+  flex: 1;
   min-width: 0;
+  user-select: text;
+}
+
+.toast-close {
+  margin-left: 2px;
+  color: var(--text-3);
 }
 
 .toast-action {
@@ -1383,4 +1407,72 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------- 动效、窄窗与减少动态 ---------- */
+
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-mask {
+  animation: modal-fade-in 0.12s ease-out;
+}
+
+.modal {
+  animation: modal-pop-in 0.16s ease-out;
+}
+
+.source-line {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1120px) {
+  .bk-col-size {
+    display: none;
+  }
+
+  .bk-table-head {
+    padding-right: 12px;
+  }
+}
+
+@media (max-width: 1020px) {
+  .bk-col-count {
+    display: none;
+  }
+
+  .sidebar {
+    width: 250px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .spin {
+    animation: none;
+  }
 }

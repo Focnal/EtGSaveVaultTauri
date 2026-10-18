@@ -15,7 +15,8 @@ async function confirm(): Promise<void> {
     await m.value.onConfirm()
   } finally {
     busy.value = false
-    state.modal = { kind: 'none' }
+    // onConfirm 理论上可能切换到另一个弹窗，别把它覆盖掉
+    if (state.modal.kind === 'confirm') state.modal = { kind: 'none' }
   }
 }
 

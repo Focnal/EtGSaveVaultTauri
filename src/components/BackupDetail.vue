@@ -51,6 +51,11 @@ const noteSaving = ref(false)
 let noteTarget: NoteTarget | null = null
 let persistedNote = ''
 let noteTimer: number | undefined
+let saveSeq = 0
+
+function isCurrentTarget(target: NoteTarget): boolean {
+  return noteTarget?.workspaceId === target.workspaceId && noteTarget.name === target.name
+}
 
 function clearNoteTimer(): void {
   if (noteTimer !== undefined) {
@@ -66,8 +71,10 @@ function flushPreviousNote(): void {
   const value = note.value
   if (value === persistedNote) return
   clearNoteTimer()
+  const seq = ++saveSeq
   void saveNote(target.workspaceId, target.name, value, { silent: true }).then((ok) => {
-    if (ok) persistedNote = value
+    // 保存是异步的，回来时可能已经切到另一份备份，不能污染新目标的已保存值
+    if (ok && seq === saveSeq && isCurrentTarget(target)) persistedNote = value
   })
 }
 
@@ -100,10 +107,11 @@ watch(
 const noteDirty = computed(() => note.value !== (state.detail?.note ?? ''))
 
 async function persistNote(value: string, target: NoteTarget): Promise<void> {
+  const seq = ++saveSeq
   noteSaving.value = true
   const ok = await saveNote(target.workspaceId, target.name, value, { silent: true })
-  if (ok) persistedNote = value
-  noteSaving.value = false
+  if (ok && isCurrentTarget(target)) persistedNote = value
+  if (seq === saveSeq) noteSaving.value = false
 }
 
 // 输入停顿后自动保存；显式「保存」按钮仍保留
@@ -137,11 +145,14 @@ const damageText = computed(() => {
 async function onSaveNote(): Promise<void> {
   const dd = state.detail
   if (!dd || !noteTarget) return
+  const target = { workspaceId: dd.workspaceId, name: dd.name }
+  const value = note.value
   clearNoteTimer()
+  const seq = ++saveSeq
   noteSaving.value = true
-  const ok = await saveNote(dd.workspaceId, dd.name, note.value)
-  noteSaving.value = false
-  if (ok) persistedNote = note.value
+  const ok = await saveNote(dd.workspaceId, dd.name, value)
+  if (ok && isCurrentTarget(target)) persistedNote = value
+  if (seq === saveSeq) noteSaving.value = false
 }
 
 function onRename(): void {

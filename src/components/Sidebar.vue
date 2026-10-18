@@ -89,11 +89,11 @@ function onBackupContext(e: MouseEvent, ws: Workspace, b: BackupSummary): void {
     <div class="sidebar-head">
       <span class="sidebar-title">工作区</span>
       <div class="sidebar-head-actions">
-        <button class="icon-btn" title="全部刷新" :disabled="scanningAll" @click="scanAll">
+        <button class="icon-btn" title="全部刷新 (F5)" aria-label="全部刷新" :disabled="scanningAll" @click="scanAll">
           <LoaderCircle v-if="scanningAll" :size="14" class="spin" />
           <RefreshCw v-else :size="14" />
         </button>
-        <button class="icon-btn" title="添加工作区" @click="addWorkspace">
+        <button class="icon-btn" title="添加工作区" aria-label="添加工作区" @click="addWorkspace">
           <Plus :size="16" />
         </button>
       </div>
@@ -120,7 +120,7 @@ function onBackupContext(e: MouseEvent, ws: Workspace, b: BackupSummary): void {
       </button>
     </div>
 
-    <div class="tree">
+    <div class="tree" role="tree" aria-label="工作区与备份">
       <div v-if="workspaces.length === 0" class="tree-empty">
         <FolderSearch :size="30" :stroke-width="1.3" />
         <p>还没有工作区</p>
@@ -131,24 +131,31 @@ function onBackupContext(e: MouseEvent, ws: Workspace, b: BackupSummary): void {
         </button>
       </div>
 
-      <div v-else-if="filtering && matchTotal === 0" class="tree-hint filter-empty">
+      <div v-else-if="filtering && matchTotal === 0 && !scanningAll" class="tree-hint filter-empty">
         没有匹配「{{ state.filter.trim() }}」的备份
       </div>
 
-      <div v-for="ws in workspaces" :key="ws.id" class="ws-node">
+      <div v-for="ws in workspaces" :key="ws.id" class="ws-node" role="group">
         <div
           class="tree-row ws-row"
+          role="treeitem"
+          tabindex="0"
+          :aria-expanded="!!state.expanded[ws.id]"
+          :aria-selected="state.selectedWorkspaceId === ws.id && !state.selectedBackupName"
           :class="{
             selected: state.selectedWorkspaceId === ws.id && !state.selectedBackupName,
             'selected-parent': state.selectedWorkspaceId === ws.id && !!state.selectedBackupName
           }"
           @click="onWorkspaceClick(ws)"
+          @keydown.enter.self.prevent="onWorkspaceClick(ws)"
+          @keydown.space.self.prevent="onWorkspaceClick(ws)"
           @contextmenu.prevent="onWorkspaceContext($event, ws)"
         >
           <button
             class="chevron"
             :class="{ open: state.expanded[ws.id] }"
             title="展开/收起"
+            :aria-label="state.expanded[ws.id] ? '收起工作区' : '展开工作区'"
             @click.stop="toggle(ws.id)"
           >
             <ChevronRight :size="13" />
@@ -163,15 +170,22 @@ function onBackupContext(e: MouseEvent, ws: Workspace, b: BackupSummary): void {
           </span>
         </div>
 
-        <div v-if="state.expanded[ws.id] || filtering" class="bk-list">
+        <div v-if="state.expanded[ws.id] || filtering" class="bk-list" role="group">
           <div
             v-for="b in visibleOf(ws.id)"
             :key="b.name"
             class="tree-row bk-row"
+            role="treeitem"
+            tabindex="0"
+            :aria-selected="
+              state.selectedWorkspaceId === ws.id && state.selectedBackupName === b.name
+            "
             :class="{
               selected: state.selectedWorkspaceId === ws.id && state.selectedBackupName === b.name
             }"
             @click="selectBackup(ws.id, b.name)"
+            @keydown.enter.self.prevent="selectBackup(ws.id, b.name)"
+            @keydown.space.self.prevent="selectBackup(ws.id, b.name)"
             @contextmenu.prevent="onBackupContext($event, ws, b)"
           >
             <Camera v-if="b.isSnapshot" :size="13" class="row-icon dim-icon" />

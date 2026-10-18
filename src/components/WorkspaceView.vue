@@ -98,10 +98,20 @@ function onSortChange(e: Event): void {
         {{ source.fileCount }} 个文件 · {{ formatSize(source.totalSize) }}
         <template v-if="source.modifiedAt"> · 最后写入 {{ formatTime(source.modifiedAt) }}</template>
       </span>
-      <button class="icon-btn xs" title="复制来源路径" @click="copyText(game.sourcePath, '来源路径')">
+      <button
+        class="icon-btn xs"
+        title="复制来源路径"
+        aria-label="复制来源路径"
+        @click="copyText(game.sourcePath, '来源路径')"
+      >
         <Copy :size="12" />
       </button>
-      <button class="icon-btn xs" title="打开来源目录" @click="openInExplorer(game.sourcePath)">
+      <button
+        class="icon-btn xs"
+        title="打开来源目录"
+        aria-label="打开来源目录"
+        @click="openInExplorer(game.sourcePath)"
+      >
         <ExternalLink :size="12" />
       </button>
     </div>
@@ -115,7 +125,7 @@ function onSortChange(e: Event): void {
       </div>
       <label class="sort-control">
         <span class="dim">排序</span>
-        <select :value="state.backupSort" @change="onSortChange">
+        <select :value="state.backupSort" aria-label="备份排序" @change="onSortChange">
           <option value="newest">最新优先</option>
           <option value="oldest">最早优先</option>
           <option value="name">名称</option>
@@ -136,9 +146,9 @@ function onSortChange(e: Event): void {
     <div v-else class="bk-table">
       <div class="bk-table-head">
         <span class="bk-head-name">名称 / 备注</span>
-        <span class="bk-meta">创建时间</span>
-        <span class="bk-meta">文件数</span>
-        <span class="bk-meta">占用</span>
+        <span class="bk-meta bk-col-date">创建时间</span>
+        <span class="bk-meta bk-col-count">文件数</span>
+        <span class="bk-meta bk-col-size">占用</span>
       </div>
       <div
         v-for="b in filtered"
@@ -158,9 +168,9 @@ function onSortChange(e: Event): void {
         </span>
         <span v-if="!b.hasData" class="badge badge-warn">数据缺失</span>
         <span v-if="!b.hasRegistry" class="badge badge-warn">注册表缺失</span>
-        <span class="bk-meta">{{ formatTime(b.createdAt) }}</span>
-        <span class="bk-meta">{{ b.fileCount }} 个文件</span>
-        <span class="bk-meta">{{ formatSize(b.totalSize) }}</span>
+        <span class="bk-meta bk-col-date">{{ formatTime(b.createdAt) }}</span>
+        <span class="bk-meta bk-col-count">{{ b.fileCount }} 个文件</span>
+        <span class="bk-meta bk-col-size">{{ formatSize(b.totalSize) }}</span>
       </div>
     </div>
   </div>

@@ -86,6 +86,7 @@ function close(): void {
           <button
             class="icon-btn"
             title="在资源管理器中打开这份回档点"
+            aria-label="打开这份回档点目录"
             @click="openInExplorer(p.path)"
           >
             <FolderOpen :size="14" />
@@ -99,7 +100,12 @@ function close(): void {
             <RotateCcw :size="13" />
             还原
           </button>
-          <button class="icon-btn" title="删除这份回档点" @click="requestRemoveRollback(p)">
+          <button
+            class="icon-btn"
+            title="删除这份回档点"
+            aria-label="删除这份回档点"
+            @click="requestRemoveRollback(p)"
+          >
             <Trash2 :size="14" />
           </button>
         </div>

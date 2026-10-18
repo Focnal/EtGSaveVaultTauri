@@ -155,11 +155,13 @@ export async function openInExplorer(path: string): Promise<void> {
 export function toast(kind: Toast['kind'], text: string, action?: ToastAction): void {
   const id = ++toastId
   state.toasts.push({ id, kind, text, action })
+  // 限制同时展示的条数，避免连续失败时占满窗口；更早的提示仍保留在控制台/用户已看到
+  if (state.toasts.length > 4) state.toasts.splice(0, state.toasts.length - 4)
   setTimeout(
     () => {
       state.toasts = state.toasts.filter((t) => t.id !== id)
     },
-    action ? 15000 : 4200
+    action ? 15000 : kind === 'err' ? 8000 : 4200
   )
 }
 
@@ -339,6 +341,11 @@ export function openRename(workspaceId: string, name: string): void {
   state.modal = { kind: 'rename', workspaceId, name }
 }
 
+/** 命令失败时后端不会再发 done 事件，主动收起可能残留的进度条 */
+function clearStaleProgress(): void {
+  state.progress = null
+}
+
 export type CreateBackupOutcome = 'ok' | 'exists' | 'error'
 
 export async function createBackup(
@@ -354,6 +361,7 @@ export async function createBackup(
     return 'ok'
   } catch (e) {
     const msg = errMsg(e)
+    clearStaleProgress()
     // 交给调用方内联展示覆盖确认，避免把「新建备份」弹窗整个替换掉
     if (msg.includes('已存在') && !overwrite) return 'exists'
     toast('err', msg)
@@ -454,7 +462,9 @@ async function doRestore(
     void refreshGameStatus()
     void refreshSourceStatus()
   } catch (e) {
+    clearStaleProgress()
     toast('err', errMsg(e))
+    void refreshGameStatus()
   }
 }
 
@@ -474,7 +484,9 @@ export async function restoreRollback(id: string): Promise<void> {
     void refreshGameStatus()
     void refreshSourceStatus()
   } catch (e) {
+    clearStaleProgress()
     toast('err', errMsg(e))
+    void refreshGameStatus()
   }
 }
 
@@ -642,7 +654,7 @@ export function startGameStatusWatcher(): void {
   window.addEventListener('focus', () => {
     void refreshGameStatus()
     // 外部可能新增/删除了备份；节流后刷新，避免频繁 Alt-Tab 触发全量统计
-    if (Date.now() - lastScanAt > 15000) void scanAll()
+    if (state.modal.kind === 'none' && Date.now() - lastScanAt > 30000) void scanAll()
   })
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) void refreshGameStatus()

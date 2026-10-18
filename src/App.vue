@@ -8,7 +8,8 @@ import {
   Info,
   LoaderCircle,
   Plus,
-  Settings
+  Settings,
+  X
 } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import BackupDetail from './components/BackupDetail.vue'
@@ -22,6 +23,7 @@ import Sidebar from './components/Sidebar.vue'
 import WorkspaceView from './components/WorkspaceView.vue'
 import {
   addWorkspace,
+  dismissToast,
   init,
   openNewBackup,
   openRename,
@@ -150,7 +152,7 @@ const gameStatusClass = computed(() => {
       </div>
     </header>
 
-    <div v-if="state.progress" class="progress-strip">
+    <div v-if="state.progress" class="progress-strip" role="status" aria-live="polite">
       <span class="progress-label">
         {{ state.progress.label }}
         <template v-if="state.progress.total">
@@ -199,14 +201,23 @@ const gameStatusClass = computed(() => {
     <ConfirmModal v-if="state.modal.kind === 'confirm'" />
     <ContextMenu v-if="state.menu" />
 
-    <div class="toasts">
-      <div v-for="t in state.toasts" :key="t.id" class="toast" :class="'toast-' + t.kind">
+    <div class="toasts" aria-live="polite" aria-atomic="false">
+      <div
+        v-for="t in state.toasts"
+        :key="t.id"
+        class="toast"
+        :class="'toast-' + t.kind"
+        :role="t.kind === 'err' ? 'alert' : 'status'"
+      >
         <CheckCircle2 v-if="t.kind === 'ok'" :size="15" />
         <AlertTriangle v-else-if="t.kind === 'err'" :size="15" />
         <Info v-else :size="15" />
         <span class="toast-text">{{ t.text }}</span>
         <button v-if="t.action" class="toast-action" @click="runToastAction(t)">
           {{ t.action.label }}
+        </button>
+        <button class="icon-btn xs toast-close" title="关闭" aria-label="关闭提示" @click="dismissToast(t.id)">
+          <X :size="12" />
         </button>
       </div>
     </div>

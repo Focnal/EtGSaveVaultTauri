@@ -532,6 +532,22 @@ mod tests {
         assert!(backup_path(&ws, r"..\other").is_err());
     }
 
+    #[test]
+    fn detects_save_slots_from_file_names() {
+        let dir = std::env::temp_dir().join(format!(
+            "etg-vault-slots-{}-{}",
+            std::process::id(),
+            crate::fsutil::timestamp()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        for name in ["SlotA.save", "ActiveB.game", "SlotC.options", "notes.txt"] {
+            fs::write(dir.join(name), b"").unwrap();
+        }
+        let slots = detect_slots(&dir);
+        let _ = fs::remove_dir_all(&dir);
+        assert_eq!(slots, vec!["A".to_string(), "B".to_string(), "C".to_string()]);
+    }
+
     /// 需要真实工作区：BENCH_WS=<dir> cargo test --release -- --ignored --nocapture
     #[test]
     #[ignore = "需要 BENCH_WS 环境变量指向一个真实工作区"]

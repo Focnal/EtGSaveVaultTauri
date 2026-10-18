@@ -4,6 +4,8 @@ import { closeMenu, runMenuEntry, state, type MenuEntry } from '../store'
 
 const el = ref<HTMLElement | null>(null)
 const pos = ref({ x: 0, y: 0 })
+let previousFocus: HTMLElement | null = null
+let restoreOnClose = false
 
 /** 贴边时向内收，避免被裁掉 */
 function place(): void {
@@ -24,6 +26,7 @@ function onPointerDown(e: MouseEvent): void {
 
 function onKey(e: KeyboardEvent): void {
   if (e.key === 'Escape') {
+    restoreOnClose = true
     closeMenu()
     return
   }
@@ -60,6 +63,7 @@ function pick(entry: MenuEntry): void {
 }
 
 onMounted(() => {
+  previousFocus = document.activeElement as HTMLElement | null
   void nextTick(() => {
     place()
     focusFirstItem()
@@ -79,6 +83,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onDismiss)
   window.removeEventListener('blur', onDismiss)
   window.removeEventListener('scroll', onDismiss, true)
+  if (restoreOnClose) previousFocus?.focus()
 })
 
 // 已打开时右键另一行不会重新挂载，需要重新定位

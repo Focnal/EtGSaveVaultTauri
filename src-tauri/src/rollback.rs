@@ -286,6 +286,7 @@ pub fn capture(
 pub fn restore_point(
     game: &GameSettings,
     id: &str,
+    progress: &ProgressFn,
 ) -> Result<RegistryOutcome, AppError> {
     let dir = store_path(game);
     let src = resolve_point(&dir, id)?;
@@ -295,20 +296,44 @@ pub fn restore_point(
     }
 
     let source = crate::fsutil::absolutize(&game.source_path);
+    let (count, _) = walk_stats(&data_src);
+    let mut done = 0u64;
+    progress(&ProgressEvent {
+        phase: BackupPhase::Copy,
+        done,
+        total: count,
+        label: "还原回档点".into(),
+    });
     if path_exists(&source) {
         fs::remove_dir_all(&source)?;
     }
-    copy_dir(&data_src, &source, &mut || {})?;
+    copy_dir(&data_src, &source, &mut || {
+        done += 1;
+        if done % 5 == 0 || done == count {
+            progress(&ProgressEvent {
+                phase: BackupPhase::Copy,
+                done,
+                total: count,
+                label: "还原回档点".into(),
+            });
+        }
+    })?;
 
     let reg_file = src.join(&game.reg_file_name);
-    if !path_exists(&reg_file) {
-        return Ok(RegistryOutcome::Missing);
-    }
-    Ok(if sys::import_registry(&reg_file) {
+    let outcome = if !path_exists(&reg_file) {
+        RegistryOutcome::Missing
+    } else if sys::import_registry(&reg_file) {
         RegistryOutcome::Ok
     } else {
         RegistryOutcome::Failed
-    })
+    };
+    progress(&ProgressEvent {
+        phase: BackupPhase::Done,
+        done: count,
+        total: count,
+        label: "完成".into(),
+    });
+    Ok(outcome)
 }
 
 pub fn remove_point(game: &GameSettings, id: &str) -> Result<(), AppError> {

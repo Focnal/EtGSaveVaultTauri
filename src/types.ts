@@ -110,7 +110,7 @@ export interface RollbackRestoreResult {
   points: RollbackPoint[]
 }
 
-export type RegistryOutcome = 'ok' | 'missing' | 'failed'
+export type RegistryOutcome = 'ok' | 'missing' | 'failed' | 'skipped'
 
 export interface BackupProgress {
   workspaceId: string

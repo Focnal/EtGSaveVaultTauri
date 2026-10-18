@@ -1,5 +1,6 @@
 import { reactive, type Component } from 'vue'
 import { api, errMsg } from './api'
+import { formatSize, formatTime } from './format'
 import type {
   AppConfig,
   BackupDetail,
@@ -73,6 +74,7 @@ export const state = reactive({
   detailLoading: false,
   progress: null as BackupProgress | null,
   gameRunning: null as boolean | null,
+  gameStatusLoading: false,
   rollbacks: null as RollbackList | null,
   menu: null as MenuState | null,
   modal: { kind: 'none' } as ModalState,
@@ -150,6 +152,7 @@ export async function init(): Promise<void> {
     void refreshGameStatus()
     void refreshSourceStatus()
     void loadRollbacks()
+    startGameStatusWatcher()
   } catch (e) {
     state.bootError = errMsg(e)
   }
@@ -343,26 +346,45 @@ async function withGameStopped(opts: {
 function registryText(registry: RegistryOutcome): string {
   if (registry === 'ok') return '注册表已导入'
   if (registry === 'failed') return '注册表导入失败'
+  if (registry === 'skipped') return '已跳过注册表'
   return '备份中无注册表文件'
 }
 
-export async function restoreBackup(workspaceId: string, name: string): Promise<void> {
+export async function restoreBackup(
+  workspaceId: string,
+  name: string,
+  includeRegistry = true
+): Promise<void> {
   try {
+    const summary = state.scans[workspaceId]?.backups.find((b) => b.name === name)
+    const sourcePath = state.config?.game.sourcePath ?? '（未配置）'
+    const meta = summary
+      ? `${formatTime(summary.createdAt)} · ${summary.fileCount} 个文件 · ${formatSize(summary.totalSize)}`
+      : '未知时间'
+    const registryLine = includeRegistry
+      ? '备份中的注册表将一并导入。'
+      : '只恢复存档数据，不会导入注册表。'
     await withGameStopped({
       title: '恢复备份',
-      message: `将用「${name}」覆盖当前存档。覆盖前的存档会自动保留为回档点，可随时还原。`,
-      confirmText: '确认恢复',
+      message:
+        `将用「${name}」（${meta}）覆盖当前存档：\n${sourcePath}\n\n` +
+        `${registryLine}覆盖前的存档会自动保留为回档点，可随时还原。`,
+      confirmText: includeRegistry ? '确认恢复' : '仅恢复数据',
       danger: false,
-      run: () => doRestore(workspaceId, name)
+      run: () => doRestore(workspaceId, name, includeRegistry)
     })
   } catch (e) {
     toast('err', errMsg(e))
   }
 }
 
-async function doRestore(workspaceId: string, name: string): Promise<void> {
+async function doRestore(
+  workspaceId: string,
+  name: string,
+  includeRegistry: boolean
+): Promise<void> {
   try {
-    const r = await api.restoreBackup(workspaceId, name)
+    const r = await api.restoreBackup(workspaceId, name, includeRegistry)
     const kept = r.rollback ? '，原存档已存为回档点' : ''
     const point = r.rollback
     toast(
@@ -540,10 +562,28 @@ export async function refreshSourceStatus(): Promise<void> {
   }
 }
 
-export async function refreshGameStatus(): Promise<void> {
+export async function refreshGameStatus(showLoading = false): Promise<void> {
+  if (showLoading) state.gameStatusLoading = true
   try {
     state.gameRunning = (await api.gameStatus()).running
   } catch {
     state.gameRunning = null
+  } finally {
+    if (showLoading) state.gameStatusLoading = false
   }
+}
+
+let gameWatcherStarted = false
+
+/** 定期刷新进程状态；窗口重新获得焦点时也刷新一次，避免展示过期状态。 */
+export function startGameStatusWatcher(): void {
+  if (gameWatcherStarted) return
+  gameWatcherStarted = true
+  window.setInterval(() => {
+    if (!document.hidden) void refreshGameStatus()
+  }, 5000)
+  window.addEventListener('focus', () => void refreshGameStatus())
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void refreshGameStatus()
+  })
 }

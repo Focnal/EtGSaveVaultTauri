@@ -72,6 +72,8 @@ pub enum RegistryOutcome {
     Ok,
     Missing,
     Failed,
+    /// 用户选择只恢复存档数据，未导入注册表
+    Skipped,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -317,11 +319,15 @@ pub fn create_backup(
     Ok(CreateResult { has_registry })
 }
 
-/// 恢复备份：先捕获回档点，再覆盖存档来源目录，最后导入注册表。
+/// 恢复备份：先捕获回档点，再覆盖存档来源目录，最后按需导入注册表。
+///
+/// `include_registry = false` 时允许只有数据目录的备份恢复存档数据，
+/// 用于注册表导出失败但仍需保留游戏进度的场景。
 pub fn restore_backup(
     ws: &Workspace,
     game: &GameSettings,
     name: &str,
+    include_registry: bool,
     progress: &ProgressFn,
 ) -> Result<RestoreResult, AppError> {
     let base = backup_path(ws, name)?;
@@ -329,8 +335,8 @@ pub fn restore_backup(
     if !path_exists(&data_src) {
         return Err(AppError::from("该备份缺少存档数据目录，无法恢复"));
     }
-    if !path_exists(&base.join(&game.reg_file_name)) {
-        return Err(AppError::from("该备份缺少注册表文件，已损坏，无法恢复"));
+    if include_registry && !path_exists(&base.join(&game.reg_file_name)) {
+        return Err(AppError::from("该备份缺少注册表文件，无法连同注册表恢复"));
     }
 
     progress(&ProgressEvent {
@@ -375,7 +381,9 @@ pub fn restore_backup(
         return Err(AppError(format!("恢复存档文件失败：{err}{hint}")));
     }
 
-    let registry = if sys::import_registry(&base.join(&game.reg_file_name)) {
+    let registry = if !include_registry {
+        RegistryOutcome::Skipped
+    } else if sys::import_registry(&base.join(&game.reg_file_name)) {
         RegistryOutcome::Ok
     } else {
         RegistryOutcome::Failed

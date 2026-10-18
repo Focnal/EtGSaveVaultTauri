@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { formatSize, formatTime, timestampName } from '../format'
 import { createBackup, refreshGameStatus, refreshSourceStatus, state } from '../store'
 import ModalShell from './ModalShell.vue'
+import ProgressInline from './ProgressInline.vue'
 
 const workspaceId = computed(() => (state.modal.kind === 'newBackup' ? state.modal.workspaceId : ''))
 const name = ref(timestampName())
@@ -95,6 +96,8 @@ function cancel(): void {
       <AlertTriangle :size="14" class="warn-icon" />
       <span>备份「{{ name.trim() }}」已存在，继续将删除原备份并写入当前存档。</span>
     </div>
+
+    <ProgressInline v-if="busy" />
 
     <template #actions>
       <button class="btn" :disabled="busy" @click="cancel">取消</button>

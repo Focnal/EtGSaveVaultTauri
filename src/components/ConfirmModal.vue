@@ -3,6 +3,7 @@ import { AlertTriangle } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { state } from '../store'
 import ModalShell from './ModalShell.vue'
+import ProgressInline from './ProgressInline.vue'
 
 const m = computed(() => (state.modal.kind === 'confirm' ? state.modal : null))
 const busy = ref(false)
@@ -30,6 +31,7 @@ function cancel(): void {
       <AlertTriangle :size="16" :class="m.danger ? 'danger-icon' : 'warn-icon'" />
     </template>
     <p class="modal-msg">{{ m.message }}</p>
+    <ProgressInline v-if="busy" />
     <template #actions>
       <button class="btn" data-autofocus :disabled="busy" @click="cancel">取消</button>
       <button

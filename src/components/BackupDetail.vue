@@ -120,9 +120,8 @@ const noteStatus = computed(() => {
 const damageText = computed(() => {
   const dd = state.detail
   if (!dd || dd.valid) return ''
-  if (!dd.hasData && !dd.hasRegistry) return '备份中缺少存档数据目录和注册表文件，备份已损坏，无法用于恢复。'
-  if (!dd.hasData) return '备份中缺少存档数据目录，备份已损坏，无法用于恢复。'
-  return '备份中缺少注册表文件，备份已损坏，无法用于恢复。'
+  if (!dd.hasData) return '备份中缺少存档数据目录，无法用于恢复。'
+  return '备份中缺少注册表文件，可以只恢复存档数据，或补齐注册表后再完整恢复。'
 })
 
 async function onSaveNote(): Promise<void> {
@@ -165,12 +164,18 @@ function onRename(): void {
         </button>
         <button
           class="btn btn-warn"
-          :disabled="!d.valid"
-          :title="d.valid ? '用该备份覆盖当前存档' : '备份已损坏，无法恢复'"
-          @click="restoreBackup(d.workspaceId, d.name)"
+          :disabled="!d.hasData"
+          :title="
+            !d.hasData
+              ? '缺少存档数据目录，无法恢复'
+              : d.hasRegistry
+                ? '用该备份覆盖当前存档并导入注册表'
+                : '仅恢复存档数据，不导入注册表'
+          "
+          @click="restoreBackup(d.workspaceId, d.name, d.hasRegistry)"
         >
           <RotateCcw :size="14" />
-          恢复此备份
+          {{ d.hasRegistry ? '恢复此备份' : '仅恢复存档数据' }}
         </button>
         <button class="btn btn-danger" @click="requestDeleteBackup(d.workspaceId, d.name)">
           <Trash2 :size="14" />

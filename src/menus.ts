@@ -35,12 +35,12 @@ export function openWorkspaceMenu(e: MouseEvent, ws: Workspace): void {
 export function openBackupMenu(e: MouseEvent, workspaceId: string, b: BackupSummary): void {
   const entries: MenuEntry[] = [
     { label: '重命名', icon: Pencil, run: () => openRename(workspaceId, b.name) },
-    // 数据或注册表缺失时无法恢复，与详情页按钮一致
+    // 缺少注册表时仍可只恢复存档数据；只有缺少数据目录才彻底禁用
     {
-      label: '恢复此存档',
+      label: b.hasRegistry ? '恢复此存档' : '仅恢复存档数据',
       icon: RotateCcw,
-      disabled: !b.valid,
-      run: () => restoreBackup(workspaceId, b.name)
+      disabled: !b.hasData,
+      run: () => restoreBackup(workspaceId, b.name, b.hasRegistry)
     },
     { label: '在资源管理器中打开', icon: ExternalLink, run: () => openInExplorer(b.path) },
     { divider: true },

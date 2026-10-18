@@ -29,8 +29,8 @@ export const api = {
     invoke<BackupDetail | null>('backup_detail', { workspaceId, name }),
   createBackup: (workspaceId: string, name: string, note: string, overwrite: boolean) =>
     invoke<CreateResult>('create_backup', { workspaceId, name, note, overwrite }),
-  restoreBackup: (workspaceId: string, name: string) =>
-    invoke<RestoreResult>('restore_backup', { workspaceId, name }),
+  restoreBackup: (workspaceId: string, name: string, includeRegistry = true) =>
+    invoke<RestoreResult>('restore_backup', { workspaceId, name, includeRegistry }),
   deleteBackup: (workspaceId: string, name: string) =>
     invoke<void>('delete_backup', { workspaceId, name }),
   renameBackup: (workspaceId: string, name: string, newName: string) =>

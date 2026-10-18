@@ -28,15 +28,22 @@ onMounted(() => {
 
 const rollbackCount = computed(() => state.rollbacks?.points.length ?? 0)
 
+const progressIndeterminate = computed(() => !!state.progress && !state.progress.total)
+
 const progressPct = computed(() => {
   const p = state.progress
-  if (!p || !p.total) return p && p.phase !== 'done' ? 100 : 0
+  if (!p || !p.total) return 0
   return Math.min(100, Math.round((p.done / p.total) * 100))
 })
 
 const gameStatusText = computed(() => {
   if (state.gameRunning === null) return '状态未知'
   return state.gameRunning ? '游戏运行中' : '游戏未运行'
+})
+
+const gameStatusClass = computed(() => {
+  if (state.gameRunning === null) return 'chip-neutral'
+  return state.gameRunning ? 'chip-warn' : 'chip-ok'
 })
 </script>
 
@@ -71,11 +78,13 @@ const gameStatusText = computed(() => {
         </button>
         <button
           class="chip"
-          :class="state.gameRunning ? 'chip-warn' : 'chip-ok'"
+          :class="gameStatusClass"
           title="点击刷新游戏进程状态"
-          @click="refreshGameStatus"
+          :disabled="state.gameStatusLoading"
+          @click="refreshGameStatus(true)"
         >
-          <Gamepad2 :size="13" />
+          <LoaderCircle v-if="state.gameStatusLoading" :size="13" class="spin" />
+          <Gamepad2 v-else :size="13" />
           <span>{{ gameStatusText }}</span>
         </button>
         <button class="icon-btn" title="设置" @click="state.modal = { kind: 'settings' }">
@@ -92,7 +101,11 @@ const gameStatusText = computed(() => {
         </template>
       </span>
       <div class="progress-track">
-        <div class="progress-fill" :style="{ width: progressPct + '%' }"></div>
+        <div
+          class="progress-fill"
+          :class="{ indeterminate: progressIndeterminate }"
+          :style="progressIndeterminate ? undefined : { width: progressPct + '%' }"
+        ></div>
       </div>
     </div>
 

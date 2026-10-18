@@ -264,10 +264,11 @@ fn restore_backup(
     state: State<'_, AppState>,
     workspace_id: String,
     name: String,
+    include_registry: bool,
 ) -> Result<RestoreResult, AppError> {
     let ws = workspace_of(&state, &workspace_id)?;
     let progress = progress_fn(&app, &workspace_id);
-    backups::restore_backup(&ws, &state.game(), &name, &progress)
+    backups::restore_backup(&ws, &state.game(), &name, include_registry, &progress)
 }
 
 #[tauri::command]
@@ -311,11 +312,13 @@ fn list_rollbacks(state: State<'_, AppState>) -> RollbackList {
 
 #[tauri::command]
 fn restore_rollback(
+    app: AppHandle,
     state: State<'_, AppState>,
     id: String,
 ) -> Result<RollbackRestoreResult, AppError> {
     let game = state.game();
-    let registry = rollback::restore_point(&game, &id)?;
+    let progress = progress_fn(&app, "");
+    let registry = rollback::restore_point(&game, &id, &progress)?;
     Ok(RollbackRestoreResult {
         registry,
         points: rollback::list(&game).points,

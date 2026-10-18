@@ -13,7 +13,7 @@ import {
   Save,
   Trash2
 } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { formatSize, formatTime } from '../format'
 import {
   openInExplorer,
@@ -32,15 +32,90 @@ const wsName = computed(
 )
 const shownEntries = computed(() => (state.detail?.entries ?? []).slice(0, ENTRY_SHOW))
 
+interface NoteTarget {
+  workspaceId: string
+  name: string
+}
+
 const note = ref('')
+const noteSaving = ref(false)
+let noteTarget: NoteTarget | null = null
+let persistedNote = ''
+let noteTimer: number | undefined
+
+function clearNoteTimer(): void {
+  if (noteTimer !== undefined) {
+    window.clearTimeout(noteTimer)
+    noteTimer = undefined
+  }
+}
+
+/** 切换备份前把上一份未保存的备注写回，避免静默丢失 */
+function flushPreviousNote(): void {
+  const target = noteTarget
+  if (!target) return
+  const value = note.value
+  if (value === persistedNote) return
+  clearNoteTimer()
+  void saveNote(target.workspaceId, target.name, value, { silent: true }).then((ok) => {
+    if (ok) persistedNote = value
+  })
+}
+
+function applyCurrentDetail(): void {
+  const dd = state.detail
+  if (!dd) {
+    noteTarget = null
+    persistedNote = ''
+    note.value = ''
+    noteSaving.value = false
+    return
+  }
+  noteTarget = { workspaceId: dd.workspaceId, name: dd.name }
+  persistedNote = dd.note
+  note.value = dd.note
+  noteSaving.value = false
+}
+
+// 同步侦听：store 里切换选中项的同一拍就能取到旧目标并落盘
 watch(
-  () => state.detail?.name,
-  () => {
-    note.value = state.detail?.note ?? ''
+  () => (state.detail ? `${state.detail.workspaceId}\u0000${state.detail.name}` : ''),
+  (_, oldKey) => {
+    if (oldKey) flushPreviousNote()
+    applyCurrentDetail()
   },
-  { immediate: true }
+  { immediate: true, flush: 'sync' }
 )
+
 const noteDirty = computed(() => note.value !== (state.detail?.note ?? ''))
+
+async function persistNote(value: string, target: NoteTarget): Promise<void> {
+  noteSaving.value = true
+  const ok = await saveNote(target.workspaceId, target.name, value, { silent: true })
+  if (ok) persistedNote = value
+  noteSaving.value = false
+}
+
+// 输入停顿后自动保存；显式「保存」按钮仍保留
+watch(note, (value) => {
+  if (!noteTarget || value === persistedNote) return
+  clearNoteTimer()
+  const target = noteTarget
+  noteTimer = window.setTimeout(() => {
+    noteTimer = undefined
+    void persistNote(value, target)
+  }, 700)
+})
+
+onBeforeUnmount(() => {
+  flushPreviousNote()
+})
+
+const noteStatus = computed(() => {
+  if (noteSaving.value) return '保存中…'
+  if (noteDirty.value) return '未保存'
+  return noteTarget ? '已自动保存' : ''
+})
 
 const damageText = computed(() => {
   const dd = state.detail
@@ -50,9 +125,14 @@ const damageText = computed(() => {
   return '备份中缺少注册表文件，备份已损坏，无法用于恢复。'
 })
 
-function onSaveNote(): void {
+async function onSaveNote(): Promise<void> {
   const dd = state.detail
-  if (dd) void saveNote(dd.workspaceId, dd.name, note.value)
+  if (!dd || !noteTarget) return
+  clearNoteTimer()
+  noteSaving.value = true
+  const ok = await saveNote(dd.workspaceId, dd.name, note.value)
+  noteSaving.value = false
+  if (ok) persistedNote = note.value
 }
 
 function onRename(): void {
@@ -127,10 +207,18 @@ function onRename(): void {
       <span>{{ damageText }}</span>
     </div>
 
-    <div class="section-title">备注</div>
+    <div class="section-title">
+      备注
+      <span class="note-status" :class="{ 'warn-text': noteDirty && !noteSaving }">{{ noteStatus }}</span>
+    </div>
     <div class="note-editor">
-      <textarea v-model="note" rows="2" placeholder="给这个备份写点备注，例如当时的进度、解锁情况等"></textarea>
-      <button class="btn" :disabled="!noteDirty" @click="onSaveNote">
+      <textarea
+        v-model="note"
+        rows="2"
+        placeholder="给这个备份写点备注，例如当时的进度、解锁情况等"
+        @blur="flushPreviousNote"
+      ></textarea>
+      <button class="btn" :disabled="!noteDirty || noteSaving" @click="onSaveNote">
         <Save :size="14" />
         保存
       </button>

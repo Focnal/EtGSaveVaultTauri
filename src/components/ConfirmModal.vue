@@ -2,6 +2,7 @@
 import { AlertTriangle } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { state } from '../store'
+import ModalShell from './ModalShell.vue'
 
 const m = computed(() => (state.modal.kind === 'confirm' ? state.modal : null))
 const busy = ref(false)
@@ -18,29 +19,27 @@ async function confirm(): Promise<void> {
 }
 
 function cancel(): void {
+  if (busy.value) return
   state.modal = { kind: 'none' }
 }
 </script>
 
 <template>
-  <div v-if="m" class="modal-mask" @click.self="cancel">
-    <div class="modal">
-      <div class="modal-title">
-        <AlertTriangle v-if="m.danger" :size="16" class="warn-icon" />
-        {{ m.title }}
-      </div>
-      <p class="modal-msg">{{ m.message }}</p>
-      <div class="modal-actions">
-        <button class="btn" @click="cancel">取消</button>
-        <button
-          class="btn"
-          :class="m.danger ? 'btn-danger' : 'btn-primary'"
-          :disabled="busy"
-          @click="confirm"
-        >
-          {{ busy ? '处理中…' : m.confirmText }}
-        </button>
-      </div>
-    </div>
-  </div>
+  <ModalShell v-if="m" :title="m.title" :busy="busy" @close="cancel">
+    <template #icon>
+      <AlertTriangle :size="16" :class="m.danger ? 'danger-icon' : 'warn-icon'" />
+    </template>
+    <p class="modal-msg">{{ m.message }}</p>
+    <template #actions>
+      <button class="btn" data-autofocus :disabled="busy" @click="cancel">取消</button>
+      <button
+        class="btn"
+        :class="m.danger ? 'btn-danger' : 'btn-primary'"
+        :disabled="busy"
+        @click="confirm"
+      >
+        {{ busy ? '处理中…' : m.confirmText }}
+      </button>
+    </template>
+  </ModalShell>
 </template>

@@ -7,6 +7,7 @@ import {
   Folder,
   FolderOpen,
   FolderSearch,
+  LoaderCircle,
   Plus,
   RefreshCw
 } from 'lucide-vue-next'
@@ -26,6 +27,8 @@ import type { BackupSummary, Workspace } from '../types'
 const workspaces = computed(() => state.config?.workspaces ?? [])
 const backupsOf = (id: string) => state.scans[id]?.backups ?? []
 const missingOf = (id: string) => state.scans[id]?.missing ?? false
+const scanningOf = (id: string) => !!state.scanning[id]
+const scanningAll = computed(() => workspaces.value.some((ws) => scanningOf(ws.id)))
 
 function toggle(id: string): void {
   state.expanded[id] = !state.expanded[id]
@@ -57,8 +60,9 @@ function onBackupContext(e: MouseEvent, ws: Workspace, b: BackupSummary): void {
     <div class="sidebar-head">
       <span class="sidebar-title">工作区</span>
       <div class="sidebar-head-actions">
-        <button class="icon-btn" title="全部刷新" @click="scanAll">
-          <RefreshCw :size="14" />
+        <button class="icon-btn" title="全部刷新" :disabled="scanningAll" @click="scanAll">
+          <LoaderCircle v-if="scanningAll" :size="14" class="spin" />
+          <RefreshCw v-else :size="14" />
         </button>
         <button class="icon-btn" title="添加工作区" @click="addWorkspace">
           <Plus :size="16" />
@@ -96,6 +100,7 @@ function onBackupContext(e: MouseEvent, ws: Workspace, b: BackupSummary): void {
           <Folder v-else :size="15" class="row-icon ws-icon" />
           <span class="row-label" :title="ws.path">{{ ws.name }}</span>
           <AlertTriangle v-if="missingOf(ws.id)" :size="12" class="warn-icon" />
+          <LoaderCircle v-else-if="scanningOf(ws.id)" :size="11" class="spin row-spinner" />
           <span v-else class="row-count">{{ backupsOf(ws.id).length }}</span>
         </div>
 
@@ -118,7 +123,15 @@ function onBackupContext(e: MouseEvent, ws: Workspace, b: BackupSummary): void {
             <AlertTriangle v-if="!b.valid" :size="11" class="warn-icon" />
             <span class="row-date">{{ formatTime(b.createdAt).slice(5) }}</span>
           </div>
-          <div v-if="!missingOf(ws.id) && backupsOf(ws.id).length === 0" class="tree-hint">暂无备份</div>
+          <div v-if="scanningOf(ws.id) && !state.scans[ws.id]" class="tree-hint">
+            正在扫描…
+          </div>
+          <div
+            v-else-if="!missingOf(ws.id) && backupsOf(ws.id).length === 0"
+            class="tree-hint"
+          >
+            暂无备份
+          </div>
           <div v-if="missingOf(ws.id)" class="tree-hint warn-text">目录不存在</div>
         </div>
       </div>

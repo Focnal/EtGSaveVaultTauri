@@ -145,23 +145,43 @@ fn update_game(
     Ok(next)
 }
 
-/// 弹出目录选择框；取消时把工作区列表原样返回。
+/// 添加工作区的结果：区分「用户取消」「目录已存在」「新增成功」，
+/// 避免前端把取消和重复添加都当成静默失败。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AddWorkspaceResult {
+    config: AppConfig,
+    added: Option<Workspace>,
+    duplicate: bool,
+}
+
+/// 弹出目录选择框；取消时返回原配置并标记 added = None。
 #[tauri::command]
-async fn add_workspace(app: AppHandle, state: State<'_, AppState>) -> Result<AppConfig, AppError> {
+async fn add_workspace(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<AddWorkspaceResult, AppError> {
     let picked = app.dialog().file().blocking_pick_folder();
     let Some(folder) = picked else {
-        return Ok(state.get());
+        return Ok(AddWorkspaceResult {
+            config: state.get(),
+            added: None,
+            duplicate: false,
+        });
     };
     let folder = folder
         .into_path()
         .map_err(|e| AppError(format!("无法解析所选目录：{e}")))?;
     let path = folder.to_string_lossy().into_owned();
+    let mut duplicate = false;
+    let mut added = None;
     let next = state.mutate(|cfg| {
         let same = cfg
             .workspaces
             .iter()
             .position(|w| fsutil::normalized_lower(&w.path) == fsutil::normalized_lower(&path));
         if same.is_some() {
+            duplicate = true;
             return;
         }
         let name = folder
@@ -169,15 +189,21 @@ async fn add_workspace(app: AppHandle, state: State<'_, AppState>) -> Result<App
             .map(|n| n.to_string_lossy().into_owned())
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| path.clone());
-        cfg.workspaces.push(Workspace {
+        let ws = Workspace {
             // 时间戳在同一次点击里不会重复，够用且省掉 uuid 依赖
             id: format!("ws-{}-{}", timestamp(), cfg.workspaces.len()),
             name,
             path,
-        });
+        };
+        cfg.workspaces.push(ws.clone());
+        added = Some(ws);
     });
     config::save(&app, &next).map_err(AppError::from)?;
-    Ok(next)
+    Ok(AddWorkspaceResult {
+        config: next,
+        added,
+        duplicate,
+    })
 }
 
 #[tauri::command]
@@ -317,6 +343,42 @@ struct GameStatus {
     running: bool,
 }
 
+/// 存档来源目录的只读健康状态，供「新建备份」预检与工作区概览展示。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceStatus {
+    path: String,
+    exists: bool,
+    file_count: u64,
+    total_size: u64,
+    /// 目录内最近一次文件写入时间（毫秒），0 表示未知
+    modified_at: f64,
+}
+
+#[tauri::command]
+fn source_status(state: State<'_, AppState>) -> SourceStatus {
+    let game = state.game();
+    let path = fsutil::absolutize(&game.source_path);
+    let exists = fsutil::path_exists(&path);
+    let (file_count, total_size) = if exists {
+        fsutil::walk_stats(&path)
+    } else {
+        (0, 0)
+    };
+    let modified_at = if exists && file_count > 0 {
+        fsutil::newest_file_ms(&path)
+    } else {
+        0.0
+    };
+    SourceStatus {
+        path: game.source_path,
+        exists,
+        file_count,
+        total_size,
+        modified_at,
+    }
+}
+
 #[tauri::command]
 fn game_status(state: State<'_, AppState>) -> GameStatus {
     GameStatus {
@@ -437,6 +499,7 @@ pub fn run() {
             restore_rollback,
             remove_rollback,
             clear_rollbacks,
+            source_status,
             game_status,
             kill_game,
             pick_directory,

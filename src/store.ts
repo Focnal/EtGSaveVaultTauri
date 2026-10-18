@@ -8,6 +8,7 @@ import type {
   RegistryOutcome,
   RollbackList,
   RollbackPoint,
+  SourceStatus,
   WorkspaceScan
 } from './types'
 
@@ -60,7 +61,11 @@ export interface MenuState {
 
 export const state = reactive({
   config: null as AppConfig | null,
+  bootError: null as string | null,
   scans: {} as Record<string, WorkspaceScan>,
+  scanning: {} as Record<string, boolean>,
+  sourceStatus: null as SourceStatus | null,
+  sourceStatusLoading: false,
   expanded: {} as Record<string, boolean>,
   selectedWorkspaceId: null as string | null,
   selectedBackupName: null as string | null,
@@ -76,6 +81,8 @@ export const state = reactive({
 
 let toastId = 0
 let unlistenProgress: (() => void) | null = null
+let detailSeq = 0
+const scanSeq: Record<string, number> = {}
 
 /** 在资源管理器中打开路径；后端只放行工作区、存档来源与回档点目录 */
 export async function openInExplorer(path: string): Promise<void> {
@@ -127,18 +134,25 @@ export async function runMenuEntry(entry: MenuEntry): Promise<void> {
 }
 
 export async function init(): Promise<void> {
-  state.config = await api.getConfig()
-  if (!unlistenProgress) {
-    unlistenProgress = await api.onProgress((p) => {
-      state.progress = p.phase === 'done' ? null : p
-    })
+  state.bootError = null
+  try {
+    state.config = await api.getConfig()
+    if (!unlistenProgress) {
+      unlistenProgress = await api.onProgress((p) => {
+        state.progress = p.phase === 'done' ? null : p
+      })
+    }
+    for (const ws of state.config.workspaces) state.expanded[ws.id] = true
+    // 先让界面可用，再把扫描放到后台：备份很多时不必等全部统计完才显示窗口
+    const first = state.config.workspaces[0]
+    if (first) selectWorkspace(first.id)
+    void scanAll()
+    void refreshGameStatus()
+    void refreshSourceStatus()
+    void loadRollbacks()
+  } catch (e) {
+    state.bootError = errMsg(e)
   }
-  for (const ws of state.config.workspaces) state.expanded[ws.id] = true
-  await scanAll()
-  const first = state.config.workspaces[0]
-  if (first) selectWorkspace(first.id)
-  void refreshGameStatus()
-  void loadRollbacks()
 }
 
 export async function scanAll(): Promise<void> {
@@ -147,17 +161,26 @@ export async function scanAll(): Promise<void> {
   for (const key of Object.keys(state.scans)) {
     if (!ids.has(key)) delete state.scans[key]
   }
-  for (const ws of state.config.workspaces) {
-    await scanWorkspace(ws.id)
+  for (const key of Object.keys(state.scanning)) {
+    if (!ids.has(key)) delete state.scanning[key]
   }
+  await Promise.all(state.config.workspaces.map((ws) => scanWorkspace(ws.id)))
 }
 
 export async function scanWorkspace(id: string): Promise<void> {
+  const seq = (scanSeq[id] ?? 0) + 1
+  scanSeq[id] = seq
+  state.scanning[id] = true
   try {
-    state.scans[id] = await api.listBackups(id)
+    const scan = await api.listBackups(id)
+    // 晚到的旧扫描结果不能覆盖新结果
+    if (seq !== scanSeq[id]) return
+    state.scans[id] = scan
   } catch (e) {
-    toast('err', errMsg(e))
+    if (seq === scanSeq[id]) toast('err', errMsg(e))
     return
+  } finally {
+    if (seq === scanSeq[id]) state.scanning[id] = false
   }
   if (state.selectedWorkspaceId === id && state.selectedBackupName) {
     await refreshDetail()
@@ -166,9 +189,11 @@ export async function scanWorkspace(id: string): Promise<void> {
 
 /** expand=false 时只移动高亮，不改变展开状态（侧栏右键用） */
 export function selectWorkspace(id: string, expand = true): void {
+  detailSeq += 1
   state.selectedWorkspaceId = id
   state.selectedBackupName = null
   state.detail = null
+  state.detailLoading = false
   if (expand) state.expanded[id] = true
 }
 
@@ -176,34 +201,49 @@ export async function selectBackup(workspaceId: string, name: string): Promise<v
   state.selectedWorkspaceId = workspaceId
   state.selectedBackupName = name
   state.expanded[workspaceId] = true
+  // 先清掉上一份详情，避免加载期间显示成新选中的备份
+  state.detail = null
+  state.detailLoading = true
   await refreshDetail()
 }
 
 export async function refreshDetail(): Promise<void> {
-  if (!state.selectedWorkspaceId || !state.selectedBackupName) {
+  const workspaceId = state.selectedWorkspaceId
+  const name = state.selectedBackupName
+  if (!workspaceId || !name) {
     state.detail = null
+    state.detailLoading = false
     return
   }
+  const seq = ++detailSeq
   state.detailLoading = true
   try {
-    state.detail = await api.backupDetail(state.selectedWorkspaceId, state.selectedBackupName)
-    if (!state.detail) state.selectedBackupName = null
+    const detail = await api.backupDetail(workspaceId, name)
+    if (seq !== detailSeq) return
+    if (state.selectedWorkspaceId !== workspaceId || state.selectedBackupName !== name) return
+    state.detail = detail
+    if (!detail) state.selectedBackupName = null
   } catch (e) {
-    toast('err', errMsg(e))
+    if (seq === detailSeq) toast('err', errMsg(e))
   } finally {
-    state.detailLoading = false
+    if (seq === detailSeq) state.detailLoading = false
   }
 }
 
 export async function addWorkspace(): Promise<void> {
-  const prev = new Set((state.config?.workspaces ?? []).map((w) => w.id))
-  state.config = await api.addWorkspace()
-  const added = state.config.workspaces.find((w) => !prev.has(w.id))
-  if (added) {
-    state.expanded[added.id] = true
-    await scanWorkspace(added.id)
-    selectWorkspace(added.id)
-    toast('ok', `已添加工作区「${added.name}」`)
+  try {
+    const result = await api.addWorkspace()
+    state.config = result.config
+    if (result.added) {
+      state.expanded[result.added.id] = true
+      await scanWorkspace(result.added.id)
+      selectWorkspace(result.added.id)
+      toast('ok', `已添加工作区「${result.added.name}」`)
+    } else if (result.duplicate) {
+      toast('info', '该目录已经在工作区列表中')
+    }
+  } catch (e) {
+    toast('err', errMsg(e))
   }
 }
 
@@ -217,10 +257,14 @@ export function requestRemoveWorkspace(id: string, name: string): void {
     onConfirm: async () => {
       state.config = await api.removeWorkspace(id)
       delete state.scans[id]
+      delete state.scanning[id]
+      delete scanSeq[id]
       if (state.selectedWorkspaceId === id) {
+        detailSeq += 1
         state.selectedWorkspaceId = null
         state.selectedBackupName = null
         state.detail = null
+        state.detailLoading = false
       }
       toast('ok', '工作区已移除')
     }
@@ -235,34 +279,25 @@ export function openRename(workspaceId: string, name: string): void {
   state.modal = { kind: 'rename', workspaceId, name }
 }
 
+export type CreateBackupOutcome = 'ok' | 'exists' | 'error'
+
 export async function createBackup(
   workspaceId: string,
   name: string,
   note: string,
   overwrite: boolean
-): Promise<boolean> {
+): Promise<CreateBackupOutcome> {
   try {
     const r = await api.createBackup(workspaceId, name, note, overwrite)
     toast('ok', `备份「${name}」已创建${r.hasRegistry ? '' : '（注册表未导出）'}`)
     await scanWorkspace(workspaceId)
-    return true
+    return 'ok'
   } catch (e) {
     const msg = errMsg(e)
-    if (msg.includes('已存在') && !overwrite) {
-      state.modal = {
-        kind: 'confirm',
-        title: '覆盖备份',
-        message: `备份「${name}」已存在，覆盖后原备份将被删除。`,
-        confirmText: '覆盖',
-        danger: true,
-        onConfirm: async () => {
-          await createBackup(workspaceId, name, note, true)
-        }
-      }
-    } else {
-      toast('err', msg)
-    }
-    return false
+    // 交给调用方内联展示覆盖确认，避免把「新建备份」弹窗整个替换掉
+    if (msg.includes('已存在') && !overwrite) return 'exists'
+    toast('err', msg)
+    return 'error'
   }
 }
 
@@ -338,6 +373,7 @@ async function doRestore(workspaceId: string, name: string): Promise<void> {
     await scanWorkspace(workspaceId)
     await loadRollbacks()
     void refreshGameStatus()
+    void refreshSourceStatus()
   } catch (e) {
     toast('err', errMsg(e))
   }
@@ -357,6 +393,7 @@ export async function restoreRollback(id: string): Promise<void> {
     state.rollbacks = state.rollbacks ? { ...state.rollbacks, points: r.points } : state.rollbacks
     toast('ok', `已还原到该回档点：${registryText(r.registry)}`)
     void refreshGameStatus()
+    void refreshSourceStatus()
   } catch (e) {
     toast('err', errMsg(e))
   }
@@ -425,8 +462,10 @@ export function requestDeleteBackup(workspaceId: string, name: string): void {
         await api.deleteBackup(workspaceId, name)
         toast('ok', '备份已删除')
         if (state.selectedBackupName === name) {
+          detailSeq += 1
           state.selectedBackupName = null
           state.detail = null
+          state.detailLoading = false
         }
         await scanWorkspace(workspaceId)
       } catch (e) {
@@ -454,20 +493,51 @@ export async function renameBackup(
   }
 }
 
-export async function saveNote(workspaceId: string, name: string, note: string): Promise<void> {
+export async function saveNote(
+  workspaceId: string,
+  name: string,
+  note: string,
+  opts: { silent?: boolean } = {}
+): Promise<boolean> {
   try {
     await api.setNote(workspaceId, name, note)
-    toast('ok', '备注已保存')
-    await scanWorkspace(workspaceId)
+    // 只更新内存中的对应项，不再触发整库扫描
+    if (state.detail?.workspaceId === workspaceId && state.detail.name === name) {
+      state.detail.note = note
+    }
+    const summary = state.scans[workspaceId]?.backups.find((b) => b.name === name)
+    if (summary) summary.note = note
+    if (!opts.silent) toast('ok', '备注已保存')
+    return true
   } catch (e) {
     toast('err', errMsg(e))
+    return false
   }
 }
 
-export async function saveSettings(patch: Partial<GameSettings>): Promise<void> {
-  state.config = await api.updateGame(patch)
-  toast('ok', '设置已保存')
-  void loadRollbacks()
+export async function saveSettings(patch: Partial<GameSettings>): Promise<boolean> {
+  try {
+    state.config = await api.updateGame(patch)
+    toast('ok', '设置已保存')
+    void loadRollbacks()
+    void refreshSourceStatus()
+    return true
+  } catch (e) {
+    toast('err', errMsg(e))
+    return false
+  }
+}
+
+export async function refreshSourceStatus(): Promise<void> {
+  state.sourceStatusLoading = true
+  try {
+    state.sourceStatus = await api.sourceStatus()
+  } catch (e) {
+    state.sourceStatus = null
+    toast('err', errMsg(e))
+  } finally {
+    state.sourceStatusLoading = false
+  }
 }
 
 export async function refreshGameStatus(): Promise<void> {

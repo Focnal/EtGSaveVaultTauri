@@ -267,6 +267,12 @@ pub fn create_backup(
     }
 
     let (count, _) = walk_stats(&source);
+    if count == 0 {
+        return Err(AppError(format!(
+            "来源目录中没有可备份的存档文件：{}",
+            game.source_path
+        )));
+    }
     let mut done = 0u64;
     progress(&ProgressEvent {
         phase: BackupPhase::Copy,

@@ -32,6 +32,32 @@ pub fn walk_stats(dir: &Path) -> (u64, u64) {
     (count, size)
 }
 
+/// 目录（含子目录）中最近一次文件修改时间；无文件时退回目录自身修改时间。
+///
+/// 用于给用户提示「存档最后写入时间」，因此以文件 mtime 为准：
+/// 仅查看顶层目录的 mtime 在 Windows 上并不可靠。
+pub fn newest_file_ms(dir: &Path) -> f64 {
+    let mut newest = 0.0f64;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(cur) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&cur) else { continue };
+        for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else { continue };
+            if kind.is_dir() {
+                stack.push(entry.path());
+            } else if kind.is_file() {
+                if let Ok(meta) = entry.metadata() {
+                    newest = newest.max(modified_ms(&meta));
+                }
+            }
+        }
+    }
+    if newest > 0.0 {
+        return newest;
+    }
+    fs::metadata(dir).map(|m| modified_ms(&m)).unwrap_or(0.0)
+}
+
 /// 递归复制目录，每复制完一个文件回调一次（用于进度上报）。
 pub fn copy_dir(src: &Path, dest: &Path, on_file: &mut dyn FnMut()) -> io::Result<()> {
     fs::create_dir_all(dest)?;

@@ -26,6 +26,23 @@ export interface AppConfig {
   game: GameSettings
 }
 
+/** 添加工作区的结果：区分取消、重复与成功 */
+export interface AddWorkspaceResult {
+  config: AppConfig
+  added: Workspace | null
+  duplicate: boolean
+}
+
+/** 存档来源目录健康状态 */
+export interface SourceStatus {
+  path: string
+  exists: boolean
+  fileCount: number
+  totalSize: number
+  /** 目录内最近一次文件写入时间（毫秒），0 表示未知 */
+  modifiedAt: number
+}
+
 export interface BackupSummary {
   name: string
   path: string

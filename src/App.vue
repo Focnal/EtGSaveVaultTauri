@@ -1,5 +1,15 @@
 <script setup lang="ts">
-import { AlertTriangle, Archive, CheckCircle2, Gamepad2, History, Info, Settings } from 'lucide-vue-next'
+import {
+  AlertTriangle,
+  Archive,
+  CheckCircle2,
+  Gamepad2,
+  History,
+  Info,
+  LoaderCircle,
+  Plus,
+  Settings
+} from 'lucide-vue-next'
 import { computed, onMounted } from 'vue'
 import BackupDetail from './components/BackupDetail.vue'
 import ConfirmModal from './components/ConfirmModal.vue'
@@ -10,7 +20,7 @@ import RollbackPanel from './components/RollbackPanel.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import Sidebar from './components/Sidebar.vue'
 import WorkspaceView from './components/WorkspaceView.vue'
-import { init, refreshGameStatus, runToastAction, state } from './store'
+import { addWorkspace, init, refreshGameStatus, runToastAction, state } from './store'
 
 onMounted(() => {
   void init()
@@ -31,7 +41,19 @@ const gameStatusText = computed(() => {
 </script>
 
 <template>
-  <div class="app">
+  <div v-if="state.bootError" class="boot-screen">
+    <AlertTriangle :size="34" class="warn-icon" />
+    <p class="boot-title">应用初始化失败</p>
+    <p class="boot-message">{{ state.bootError }}</p>
+    <button class="btn btn-primary" @click="init">重试</button>
+  </div>
+
+  <div v-else-if="!state.config" class="boot-screen">
+    <LoaderCircle :size="28" class="spin" />
+    <p class="boot-message">正在读取配置…</p>
+  </div>
+
+  <div v-else class="app">
     <header class="topbar">
       <div class="brand">
         <Archive :size="17" class="brand-icon" />
@@ -78,11 +100,24 @@ const gameStatusText = computed(() => {
       <Sidebar />
       <main class="main">
         <BackupDetail v-if="state.selectedBackupName && state.detail" />
+        <div v-else-if="state.detailLoading" class="detail-loading">
+          <LoaderCircle :size="22" class="spin" />
+          <span>正在读取备份详情…</span>
+        </div>
         <WorkspaceView v-else-if="state.selectedWorkspaceId" />
+        <div v-else-if="state.config.workspaces.length === 0" class="empty-state">
+          <Archive :size="42" :stroke-width="1.1" />
+          <p>还没有工作区</p>
+          <p class="dim">添加一个用于存放备份的目录，或选择已有的备份目录。</p>
+          <button class="btn btn-primary" @click="addWorkspace">
+            <Plus :size="14" />
+            添加工作区目录
+          </button>
+        </div>
         <div v-else class="empty-state">
           <Archive :size="42" :stroke-width="1.1" />
           <p>在左侧选择一个备份查看详情</p>
-          <p class="dim">或先添加一个工作区目录</p>
+          <p class="dim">也可以直接在工作区中新建备份。</p>
         </div>
       </main>
     </div>

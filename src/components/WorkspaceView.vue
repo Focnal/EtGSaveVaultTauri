@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { Archive, Camera, ExternalLink, FolderOpen, HardDrive, Plus, RefreshCw } from 'lucide-vue-next'
+import {
+  Archive,
+  Camera,
+  ExternalLink,
+  FolderOpen,
+  HardDrive,
+  LoaderCircle,
+  Plus,
+  RefreshCw
+} from 'lucide-vue-next'
 import { computed } from 'vue'
 import { formatSize, formatTime } from '../format'
 import { openBackupMenu } from '../menus'
@@ -10,12 +19,14 @@ const ws = computed(
 )
 const scan = computed(() => (ws.value ? state.scans[ws.value.id] : undefined))
 const backups = computed(() => scan.value?.backups ?? [])
+const scanning = computed(() => (ws.value ? !!state.scanning[ws.value.id] : false))
 const totalSize = computed(() => backups.value.reduce((s, b) => s + b.totalSize, 0))
 const snapshotCount = computed(() => backups.value.filter((b) => b.isSnapshot).length)
 const latest = computed(() =>
   backups.value.length ? Math.max(...backups.value.map((b) => b.createdAt)) : null
 )
 const game = computed(() => state.config?.game ?? null)
+const source = computed(() => state.sourceStatus)
 </script>
 
 <template>
@@ -29,9 +40,10 @@ const game = computed(() => state.config?.game ?? null)
         </button>
       </div>
       <div class="view-actions">
-        <button class="btn" @click="scanWorkspace(ws.id)">
-          <RefreshCw :size="14" />
-          刷新
+        <button class="btn" :disabled="scanning" @click="scanWorkspace(ws.id)">
+          <LoaderCircle v-if="scanning" :size="14" class="spin" />
+          <RefreshCw v-else :size="14" />
+          {{ scanning ? '扫描中…' : '刷新' }}
         </button>
         <button class="btn btn-primary" @click="openNewBackup(ws.id)">
           <Plus :size="14" />
@@ -63,6 +75,13 @@ const game = computed(() => state.config?.game ?? null)
       <HardDrive :size="14" class="dim-icon" />
       <span class="dim">存档来源</span>
       <code>{{ game.sourcePath }}</code>
+      <span v-if="state.sourceStatusLoading" class="source-meta">检测中…</span>
+      <span v-else-if="source && !source.exists" class="source-meta warn-text">目录不存在</span>
+      <span v-else-if="source && source.fileCount === 0" class="source-meta warn-text">目录为空</span>
+      <span v-else-if="source" class="source-meta">
+        {{ source.fileCount }} 个文件 · {{ formatSize(source.totalSize) }}
+        <template v-if="source.modifiedAt"> · 最后写入 {{ formatTime(source.modifiedAt) }}</template>
+      </span>
       <button class="icon-btn xs" title="打开来源目录" @click="openInExplorer(game.sourcePath)">
         <ExternalLink :size="12" />
       </button>
@@ -70,6 +89,10 @@ const game = computed(() => state.config?.game ?? null)
 
     <div class="section-title">备份列表</div>
     <div v-if="scan?.missing" class="hint warn-text">目录不存在：{{ ws.path }}</div>
+    <div v-else-if="scanning && !scan" class="hint">
+      <LoaderCircle :size="13" class="spin inline-icon" />
+      正在扫描备份…
+    </div>
     <div v-else-if="backups.length === 0" class="hint">还没有备份，点击「新建备份」创建第一份。</div>
     <div v-else class="bk-table">
       <div

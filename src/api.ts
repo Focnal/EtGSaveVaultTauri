@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type {
+  AddWorkspaceResult,
   AppConfig,
   BackupDetail,
   BackupProgress,
@@ -10,6 +11,7 @@ import type {
   RestoreResult,
   RollbackList,
   RollbackRestoreResult,
+  SourceStatus,
   WorkspaceScan
 } from './types'
 
@@ -20,7 +22,7 @@ import type {
 export const api = {
   getConfig: () => invoke<AppConfig>('get_config'),
   updateGame: (patch: Partial<GameSettings>) => invoke<AppConfig>('update_game', { patch }),
-  addWorkspace: () => invoke<AppConfig>('add_workspace'),
+  addWorkspace: () => invoke<AddWorkspaceResult>('add_workspace'),
   removeWorkspace: (id: string) => invoke<AppConfig>('remove_workspace', { id }),
   listBackups: (workspaceId: string) => invoke<WorkspaceScan>('list_backups', { workspaceId }),
   backupDetail: (workspaceId: string, name: string) =>
@@ -40,6 +42,7 @@ export const api = {
   removeRollback: (id: string) => invoke<RollbackList>('remove_rollback', { id }),
   clearRollbacks: () => invoke<RollbackList>('clear_rollbacks'),
   gameStatus: () => invoke<GameStatus>('game_status'),
+  sourceStatus: () => invoke<SourceStatus>('source_status'),
   killGame: () => invoke<{ killed: boolean }>('kill_game'),
   pickDirectory: (title?: string) => invoke<string | null>('pick_directory', { title }),
   /** 在资源管理器中打开路径；允许范围由后端校验 */

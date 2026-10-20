@@ -102,8 +102,8 @@ function close(): void {
           </button>
           <button
             class="icon-btn"
-            title="删除这份回档点"
-            aria-label="删除这份回档点"
+            title="删除这份回档点（移入系统回收站）"
+            aria-label="删除这份回档点，移入系统回收站"
             @click="requestRemoveRollback(p)"
           >
             <Trash2 :size="14" />
@@ -132,7 +132,12 @@ function close(): void {
         <RefreshCw v-else :size="14" />
         刷新
       </button>
-      <button class="btn btn-danger" :disabled="points.length === 0" @click="requestClearRollbacks">
+      <button
+        class="btn btn-danger"
+        :disabled="points.length === 0"
+        title="把全部回档点移入系统回收站"
+        @click="requestClearRollbacks"
+      >
         <Trash2 :size="14" />
         全部清空
       </button>

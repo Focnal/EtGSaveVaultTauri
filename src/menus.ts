@@ -48,7 +48,13 @@ export function openBackupMenu(e: MouseEvent, workspaceId: string, b: BackupSumm
     { label: '在资源管理器中打开', icon: ExternalLink, run: () => openInExplorer(b.path) },
     { label: '复制备份路径', icon: Copy, run: () => copyText(b.path, '备份路径') },
     { divider: true },
-    { label: '删除', icon: Trash2, danger: true, run: () => requestDeleteBackup(workspaceId, b.name) }
+    {
+      label: '删除',
+      icon: Trash2,
+      danger: true,
+      hint: '移入系统回收站，可从回收站还原',
+      run: () => requestDeleteBackup(workspaceId, b.name)
+    }
   ]
   openMenu(e, entries)
 }

@@ -7,7 +7,8 @@ use crate::backups::RegistryOutcome;
 use crate::config::GameSettings;
 use crate::error::AppError;
 use crate::fsutil::{
-    copy_dir, created_ms, modified_ms, normalized_lower, path_exists, point_stamp, walk_stats,
+    copy_dir, created_ms, modified_ms, move_to_trash, normalized_lower, path_exists, point_stamp,
+    walk_stats,
 };
 use crate::sys;
 use crate::{BackupPhase, ProgressEvent, ProgressFn};
@@ -207,6 +208,9 @@ pub fn list(game: &GameSettings) -> RollbackList {
 }
 
 /// 只保留最新的 keep 份，其余按时间从旧到新删除。
+///
+/// 这里是保留策略触发的自动裁剪，仍走永久删除：
+/// 若也放进回收站，每次恢复都会往回收站丢一份完整存档，长期会占满磁盘。
 fn prune(dir: &Path, keep: u32) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
@@ -309,7 +313,7 @@ pub fn restore_point(
     }
     copy_dir(&data_src, &source, &mut || {
         done += 1;
-        if done % 5 == 0 || done == count {
+        if done.is_multiple_of(5) || done == count {
             progress(&ProgressEvent {
                 phase: BackupPhase::Copy,
                 done,
@@ -336,19 +340,21 @@ pub fn restore_point(
     Ok(outcome)
 }
 
+/// 删除单份回档点：移入系统回收站，用户误删后仍可还原。
 pub fn remove_point(game: &GameSettings, id: &str) -> Result<(), AppError> {
     let dir = store_path(game);
     let path = resolve_point(&dir, id)?;
     if path_exists(&path) {
-        fs::remove_dir_all(path)?;
+        move_to_trash(&path)?;
     }
     Ok(())
 }
 
+/// 清空回档点：整份回档点目录移入回收站，避免「清空」变成永久删除。
 pub fn clear_points(game: &GameSettings) -> Result<(), AppError> {
     let dir = store_path(game);
     if path_exists(&dir) {
-        fs::remove_dir_all(dir)?;
+        move_to_trash(&dir)?;
     }
     Ok(())
 }

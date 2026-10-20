@@ -2,9 +2,32 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
+use crate::error::AppError;
+
 /// 访问出错时视为不存在。
 pub fn path_exists(path: &Path) -> bool {
     path.exists()
+}
+
+/// 移入系统回收站（Windows 回收站），文件与目录都支持。
+///
+/// 删除备份 / 回档点等存档数据统一走这里，让用户可以从回收站还原；
+/// 失败时返回可直接展示的中文错误，而不是退回永久删除。
+pub fn move_to_trash(path: &Path) -> Result<(), AppError> {
+    trash::delete(path).map_err(|err| {
+        let reason = match &err {
+            trash::Error::TargetedRoot => "不能删除磁盘根目录".to_string(),
+            trash::Error::CouldNotAccess { .. } => {
+                "无法访问该目录，可能已被占用或权限不足".to_string()
+            }
+            trash::Error::CanonicalizePath { .. } => "路径无法解析".to_string(),
+            trash::Error::Unknown { description } if description.contains("aborted") => {
+                "操作已被取消".to_string()
+            }
+            _ => err.to_string(),
+        };
+        AppError(format!("移入回收站失败（{}）：{reason}", path.display()))
+    })
 }
 
 /// 递归统计文件数与总字节数，无法读取的条目跳过。
@@ -212,6 +235,22 @@ mod tests {
     fn is_within_ignores_case_and_separator_style() {
         assert!(is_within(r"C:\Vault\", r"c:/vault/backup"));
         assert!(!is_within(r"C:\Vault", r"C:\Vault2"));
+    }
+
+    /// 需要真实回收站：`cargo test --lib -- --ignored move_to_trash` 手动验证。
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "会真实写入系统回收站，仅手动运行"]
+    fn move_to_trash_moves_directory_to_recycle_bin() {
+        let dir = std::env::temp_dir().join(format!(
+            "etg-vault-trash-test-{}-{}",
+            std::process::id(),
+            timestamp()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("SlotA.save"), b"probe").unwrap();
+        move_to_trash(&dir).unwrap();
+        assert!(!dir.exists(), "移入回收站后原路径不应再存在");
     }
 
     #[test]

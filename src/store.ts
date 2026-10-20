@@ -364,6 +364,8 @@ export async function createBackup(
     clearStaleProgress()
     // 交给调用方内联展示覆盖确认，避免把「新建备份」弹窗整个替换掉
     if (msg.includes('已存在') && !overwrite) return 'exists'
+    // 覆盖失败时旧备份可能已移入回收站，重新扫描避免列表停留在旧状态
+    void scanWorkspace(workspaceId)
     toast('err', msg)
     return 'error'
   }
@@ -508,13 +510,13 @@ export function requestRemoveRollback(point: RollbackPoint): void {
   state.modal = {
     kind: 'confirm',
     title: '删除回档点',
-    message: '将删除这份回档点，此操作无法撤销。',
-    confirmText: '删除',
+    message: '将把这份回档点移入系统回收站，之后可从回收站还原。',
+    confirmText: '移入回收站',
     danger: true,
     onConfirm: async () => {
       try {
         state.rollbacks = await api.removeRollback(point.id)
-        toast('ok', '回档点已删除')
+        toast('ok', '回档点已移入回收站')
       } catch (e) {
         toast('err', errMsg(e))
       }
@@ -527,13 +529,13 @@ export function requestClearRollbacks(): void {
   state.modal = {
     kind: 'confirm',
     title: '清空回档点',
-    message: `将删除全部 ${n} 份回档点，工作区里的备份不受影响。`,
-    confirmText: '全部删除',
+    message: `将把全部 ${n} 份回档点移入系统回收站，工作区里的备份不受影响。`,
+    confirmText: '全部移入回收站',
     danger: true,
     onConfirm: async () => {
       try {
         state.rollbacks = await api.clearRollbacks()
-        toast('ok', '回档点已清空')
+        toast('ok', '回档点已移入回收站')
       } catch (e) {
         toast('err', errMsg(e))
       }
@@ -545,13 +547,13 @@ export function requestDeleteBackup(workspaceId: string, name: string): void {
   state.modal = {
     kind: 'confirm',
     title: '删除备份',
-    message: `备份「${name}」将被永久删除，此操作无法撤销。`,
-    confirmText: '删除',
+    message: `备份「${name}」将被移入系统回收站，之后可从回收站还原。`,
+    confirmText: '移入回收站',
     danger: true,
     onConfirm: async () => {
       try {
         await api.deleteBackup(workspaceId, name)
-        toast('ok', '备份已删除')
+        toast('ok', '备份已移入回收站')
         if (state.selectedBackupName === name) {
           detailSeq += 1
           state.selectedBackupName = null

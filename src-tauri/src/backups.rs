@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{GameSettings, Workspace};
 use crate::error::AppError;
-use crate::fsutil::{copy_dir, created_ms, modified_ms, path_exists, walk_stats};
+use crate::fsutil::{copy_dir, created_ms, modified_ms, move_to_trash, path_exists, walk_stats};
 use crate::rollback;
 use crate::sys;
 use crate::{BackupPhase, ProgressEvent, ProgressFn};
@@ -313,13 +313,7 @@ pub fn create_backup(
     progress: &ProgressFn,
 ) -> Result<CreateResult, AppError> {
     let target = backup_path(ws, name)?;
-    if path_exists(&target) {
-        if !overwrite {
-            // 前端据此文案触发「覆盖确认」
-            return Err(AppError(format!("备份「{name}」已存在")));
-        }
-        fs::remove_dir_all(&target)?;
-    }
+    // 先校验来源目录，避免来源无效却已经把旧备份移进了回收站
     let source = crate::fsutil::absolutize(&game.source_path);
     if !path_exists(&source) {
         return Err(AppError(format!(
@@ -335,6 +329,23 @@ pub fn create_backup(
             game.source_path
         )));
     }
+
+    let replaced_existing = path_exists(&target);
+    if replaced_existing {
+        if !overwrite {
+            // 前端据此文案触发「覆盖确认」
+            return Err(AppError(format!("备份「{name}」已存在")));
+        }
+        // 覆盖前的旧备份也移入回收站，误覆盖时仍可找回
+        move_to_trash(&target)?;
+    }
+    // 之后的失败提示里要说明旧备份的去向，避免用户以为它被永久删除
+    let replace_hint = if replaced_existing {
+        "；原备份已移入回收站，可从回收站找回"
+    } else {
+        ""
+    };
+
     let mut done = 0u64;
     progress(&ProgressEvent {
         phase: BackupPhase::Copy,
@@ -342,9 +353,9 @@ pub fn create_backup(
         total: count,
         label: "复制存档文件".into(),
     });
-    copy_dir(&source, &target.join(&game.data_dir_name), &mut || {
+    if let Err(err) = copy_dir(&source, &target.join(&game.data_dir_name), &mut || {
         done += 1;
-        if done % 5 == 0 || done == count {
+        if done.is_multiple_of(5) || done == count {
             progress(&ProgressEvent {
                 phase: BackupPhase::Copy,
                 done,
@@ -352,7 +363,11 @@ pub fn create_backup(
                 label: "复制存档文件".into(),
             });
         }
-    })?;
+    }) {
+        // 本次新建留下的半成品不属于用户存档，直接清掉，避免列表里出现损坏条目
+        let _ = fs::remove_dir_all(&target);
+        return Err(AppError(format!("写入备份失败：{err}{replace_hint}")));
+    }
 
     progress(&ProgressEvent {
         phase: BackupPhase::Registry,
@@ -369,7 +384,8 @@ pub fn create_backup(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs_f64() * 1000.0)
         .unwrap_or_default();
-    write_meta(&target, now, note)?;
+    write_meta(&target, now, note)
+        .map_err(|err| AppError(format!("写入备份信息失败：{err}{replace_hint}")))?;
     progress(&ProgressEvent {
         phase: BackupPhase::Done,
         done: count,
@@ -423,7 +439,7 @@ pub fn restore_backup(
     }
     let copy_result = copy_dir(&data_src, &source, &mut || {
         done += 1;
-        if done % 5 == 0 || done == count {
+        if done.is_multiple_of(5) || done == count {
             progress(&ProgressEvent {
                 phase: BackupPhase::Copy,
                 done,
@@ -461,10 +477,11 @@ pub fn restore_backup(
     })
 }
 
+/// 删除备份：移入系统回收站，用户误删后仍可从回收站还原。
 pub fn delete_backup(ws: &Workspace, name: &str) -> Result<(), AppError> {
     let path = backup_path(ws, name)?;
     if path_exists(&path) {
-        fs::remove_dir_all(path)?;
+        move_to_trash(&path)?;
     }
     Ok(())
 }

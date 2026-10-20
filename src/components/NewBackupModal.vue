@@ -112,7 +112,7 @@ function selectName(e: FocusEvent): void {
 
     <div v-if="overwritePrompt" class="damage-banner">
       <AlertTriangle :size="14" class="warn-icon" />
-      <span>备份「{{ name.trim() }}」已存在，继续将删除原备份并写入当前存档。</span>
+      <span>备份「{{ name.trim() }}」已存在，继续将把原备份移入系统回收站，再写入当前存档。</span>
     </div>
 
     <ProgressInline v-if="busy" />

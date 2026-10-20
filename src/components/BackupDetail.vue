@@ -199,7 +199,11 @@ function onRename(): void {
           <RotateCcw :size="14" />
           {{ d.hasRegistry ? '恢复此备份' : '仅恢复存档数据' }}
         </button>
-        <button class="btn btn-danger" @click="requestDeleteBackup(d.workspaceId, d.name)">
+        <button
+          class="btn btn-danger"
+          title="移入系统回收站，可从回收站还原"
+          @click="requestDeleteBackup(d.workspaceId, d.name)"
+        >
           <Trash2 :size="14" />
           删除
         </button>

@@ -1,6 +1,6 @@
 [package]
 name = "etg-save-vault"
-version = "0.1.3"
+version = "0.1.4"
 description = "Enter the Gungeon 存档备份管理工具"
 authors = ["focnal"]
 edition = "2021"
